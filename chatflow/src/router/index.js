@@ -5,7 +5,7 @@ const router = createRouter({
   routes: [
     {
       path: '/',
-      redirect: '/login',
+      redirect: '/chat/breeze',
     },
     {
       path: '/login',
@@ -16,7 +16,7 @@ const router = createRouter({
     {
       path: '/chat/breeze',
       name: 'ChatBreezeShowcase',
-      component: () => import('../components/chat/ChatBreeze.vue'),
+      component: () => import('../views/ChatBreeze.vue'),
       meta: { showcase: '简约蓝白消息中心' },
     },
   ],

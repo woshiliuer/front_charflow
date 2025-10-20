@@ -71,7 +71,7 @@ const handleRegisterSubmit = (payload) => {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: #f6f8fb;
+  background: linear-gradient(180deg, #f4f9f6 0%, #eef6f1 100%);
   padding: 24px;
   box-sizing: border-box;
 }
@@ -79,11 +79,19 @@ const handleRegisterSubmit = (payload) => {
 .login-card {
   width: min(420px, 100%);
   border-radius: 24px;
-  background: #fff;
+  background: linear-gradient(180deg, #ffffff 0%, #f7fbf8 100%);
   padding: 48px 56px;
-  box-shadow: 0 20px 60px rgba(15, 23, 42, 0.12);
-  border: 1px solid rgba(15, 23, 42, 0.06);
+  box-shadow: 0 25px 60px rgba(35, 83, 52, 0.14);
+  border: 1px solid rgba(102, 166, 130, 0.22);
   text-align: center;
+  --accent: #2f855a;
+  --accent-dark: #276749;
+  --accent-soft: rgba(47, 133, 90, 0.12);
+  --input-bg: #f4f9f6;
+  --input-border: #cfe6d8;
+  --focus-ring: rgba(47, 133, 90, 0.24);
+  --text-main: #1f3d2c;
+  --text-muted: #4d6f5a;
 }
 
 .card-header {
@@ -93,21 +101,23 @@ const handleRegisterSubmit = (payload) => {
 .brand {
   font-size: 28px;
   margin: 0;
-  color: #0f172a;
+  color: var(--accent-dark);
+  letter-spacing: 0.5px;
 }
 
 .subtitle {
   margin: 8px 0 24px;
-  color: #64748b;
+  color: var(--text-muted);
   font-size: 14px;
 }
 
 .tabs {
   display: inline-flex;
-  background: #f1f5f9;
+  background: rgba(231, 245, 237, 0.9);
   border-radius: 999px;
   padding: 4px;
   gap: 4px;
+  border: 1px solid rgba(102, 166, 130, 0.25);
 }
 
 .tab-button {
@@ -117,144 +127,33 @@ const handleRegisterSubmit = (payload) => {
   border-radius: 999px;
   background: transparent;
   font-size: 14px;
-  color: #475569;
+  color: var(--text-muted);
   cursor: pointer;
-  transition: background 0.2s ease, color 0.2s ease;
+  transition: background 0.2s ease, color 0.2s ease, box-shadow 0.2s ease;
 }
 
 .tab-button.active {
-  background: #fff;
-  color: #0f172a;
+  background: #ffffff;
+  color: var(--accent-dark);
   font-weight: 600;
-  box-shadow: 0 6px 18px rgba(15, 23, 42, 0.08);
+  box-shadow: 0 6px 18px rgba(47, 133, 90, 0.18);
 }
 
-.auth-form {
-  display: grid;
-  gap: 20px;
-  text-align: left;
-}
-
-.form-field {
-  display: grid;
-  gap: 8px;
-  font-size: 14px;
-  color: #0f172a;
-}
-
-.form-field input[type='email'],
-.form-field input[type='password'],
-.password-input input {
-  width: 100%;
-  padding: 12px 16px;
-  border-radius: 12px;
-  border: 1px solid #e2e8f0;
-  background: #f8fafc;
-  font-size: 15px;
-  color: #0f172a;
-  transition: border-color 0.2s ease, box-shadow 0.2s ease;
-}
-
-.form-field input:focus {
-  outline: none;
-  border-color: #1d4ed8;
-  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.18);
-  background: #fff;
-}
-
-.password-input {
-  display: flex;
-  align-items: center;
-  background: #f8fafc;
-  border-radius: 12px;
-  border: 1px solid #e2e8f0;
-  overflow: hidden;
-  transition: border-color 0.2s ease, box-shadow 0.2s ease;
-}
-
-.password-input:focus-within {
-  border-color: #1d4ed8;
-  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.18);
-  background: #fff;
-}
-
-.password-input input {
-  border: none;
-  padding: 12px 16px;
-  background: transparent;
-}
-
-.toggle-visibility {
-  border: none;
-  background: transparent;
-  padding: 0 14px;
-  cursor: pointer;
-  font-size: 13px;
-  font-weight: 600;
-  line-height: 1;
-  color: #94a3b8;
-}
-
-.form-options {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  font-size: 13px;
-  color: #64748b;
-}
-
-.remember {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  cursor: pointer;
-}
-
-.remember input {
-  width: 16px;
-  height: 16px;
-  border-radius: 4px;
-  border: 1px solid #cbd5f5;
-  accent-color: #0f172a;
-}
-
-.link {
-  text-decoration: none;
-  color: #0f172a;
-  font-weight: 500;
-}
-
-.submit-button {
-  width: 100%;
-  padding: 14px;
-  border-radius: 12px;
-  border: none;
-  background: #0f172a;
-  color: #fff;
-  font-size: 15px;
-  font-weight: 600;
-  cursor: pointer;
-  transition: background 0.2s ease, transform 0.1s ease;
-}
-
-.submit-button:hover {
-  background: #111c37;
-}
-
-.submit-button:active {
-  transform: translateY(1px);
+.tab-button:not(.active):hover {
+  background: rgba(47, 133, 90, 0.08);
+  color: var(--accent-dark);
 }
 
 .signup-hint {
   margin-top: 28px;
   font-size: 13px;
-  color: #475569;
+  color: var(--text-muted);
 }
 
 .link-button {
   border: none;
   background: none;
-  color: #0f172a;
+  color: var(--accent-dark);
   font-weight: 600;
   cursor: pointer;
   margin-left: 4px;
@@ -263,6 +162,7 @@ const handleRegisterSubmit = (payload) => {
 
 .link-button:hover {
   text-decoration: underline;
+  color: var(--accent);
 }
 
 @media (max-width: 640px) {

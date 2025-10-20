@@ -121,7 +121,7 @@ const handleSubmit = () => {
   display: grid;
   gap: 8px;
   font-size: 14px;
-  color: #0f172a;
+  color: var(--text-main, #0f172a);
 }
 
 .form-field input[type='email'],
@@ -131,35 +131,35 @@ const handleSubmit = () => {
   width: 100%;
   padding: 12px 16px;
   border-radius: 12px;
-  border: 1px solid #e2e8f0;
-  background: #f8fafc;
+  border: 1px solid var(--input-border, #e2e8f0);
+  background: var(--input-bg, #f8fafc);
   font-size: 15px;
-  color: #0f172a;
+  color: var(--text-main, #0f172a);
   transition: border-color 0.2s ease, box-shadow 0.2s ease;
 }
 
 .form-field input:focus {
   outline: none;
-  border-color: #1d4ed8;
-  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.18);
-  background: #fff;
+  border-color: var(--accent, #1d4ed8);
+  box-shadow: 0 0 0 3px var(--focus-ring, rgba(59, 130, 246, 0.18));
+  background: #ffffff;
 }
 
 .password-input {
   display: flex;
   align-items: center;
-  background: #f8fafc;
+  background: var(--input-bg, #f8fafc);
   border-radius: 12px;
-  border: 1px solid #e2e8f0;
+  border: 1px solid var(--input-border, #e2e8f0);
   overflow: hidden;
   transition: border-color 0.2s ease, box-shadow 0.2s ease;
   width: 100%;
 }
 
 .password-input:focus-within {
-  border-color: #1d4ed8;
-  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.18);
-  background: #fff;
+  border-color: var(--accent, #1d4ed8);
+  box-shadow: 0 0 0 3px var(--focus-ring, rgba(59, 130, 246, 0.18));
+  background: #ffffff;
 }
 
 .password-input input {
@@ -175,7 +175,7 @@ const handleSubmit = () => {
   padding: 0 14px;
   cursor: pointer;
   line-height: 1;
-  color: #94a3b8;
+  color: var(--text-muted, #94a3b8);
 }
 
 .toggle-visibility .icon {
@@ -206,14 +206,14 @@ const handleSubmit = () => {
 
 .form-tip {
   font-size: 12px;
-  color: #64748b;
+  color: var(--text-muted, #64748b);
   line-height: 1.6;
   margin: 0;
 }
 
 .link {
   text-decoration: none;
-  color: #0f172a;
+  color: var(--accent-dark, #0f172a);
   font-weight: 500;
 }
 
@@ -222,16 +222,18 @@ const handleSubmit = () => {
   padding: 14px;
   border-radius: 12px;
   border: none;
-  background: #0f172a;
+  background: var(--accent, #0f172a);
   color: #fff;
   font-size: 15px;
   font-weight: 600;
   cursor: pointer;
-  transition: background 0.2s ease, transform 0.1s ease;
+  transition: background 0.2s ease, transform 0.1s ease, box-shadow 0.2s ease;
+  box-shadow: 0 18px 28px var(--accent-soft, rgba(15, 23, 42, 0.12));
 }
 
 .submit-button:hover {
-  background: #111c37;
+  background: var(--accent-dark, #111c37);
+  box-shadow: 0 20px 32px var(--accent-soft, rgba(15, 23, 42, 0.16));
 }
 
 .submit-button:active {

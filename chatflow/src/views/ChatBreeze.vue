@@ -94,9 +94,7 @@
         <header>
           <div class="title">
             <h2>{{ selectedConversation.displayName }}</h2>
-            <span>{{ selectedConversation.period }} {{ selectedConversation.clock }}</span>
           </div>
-          <p>{{ selectedConversation.snippet }}</p>
         </header>
 
         <ul class="message-list">
@@ -106,7 +104,6 @@
             :class="['message', message.role]"
           >
             <div class="bubble">
-              <span class="author">{{ message.author }}</span>
               <p>{{ message.text }}</p>
               <time>{{ message.time }}</time>
             </div>
@@ -652,7 +649,7 @@ onBeforeUnmount(() => {
   flex: 1;
   display: flex;
   flex-direction: column;
-  gap: 24px;
+  gap: 16px;
   padding: 40px 52px;
 }
 
@@ -660,13 +657,13 @@ onBeforeUnmount(() => {
   display: flex;
   gap: 18px;
   align-items: center;
-  padding-bottom: 24px;
+
 }
 
 .divider {
   width: 100%;
   height: 1px;
-  margin: 1rem auto;
+  margin: 0.75rem auto 0.5rem;
   background-color: #ccc;
   border-radius: 2px;
 }
@@ -740,17 +737,20 @@ onBeforeUnmount(() => {
 
 .features {
   list-style: none;
-  margin: 18px 0 0;
+  margin: 18px auto 0;
   padding: 0;
   display: flex;
-  gap: 16px;
+  gap: 12px;
+  justify-content: center;
+  flex-wrap: wrap;
+  max-width: 420px;
 }
 
 .features li {
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 10px 18px;
+  padding: 10px 16px;
   border-radius: 16px;
   background: #ffffff;
   color: #325342;
@@ -762,7 +762,7 @@ onBeforeUnmount(() => {
   flex: 1;
   display: flex;
   flex-direction: column;
-  padding: 32px 0;
+  padding: 18px 0;
   color: #2b4738;
 }
 
@@ -830,10 +830,6 @@ onBeforeUnmount(() => {
   border-color: transparent;
 }
 
-.bubble .author {
-  font-size: 12px;
-  color: #617d6a;
-}
 
 .message.self .bubble .author {
   color: rgba(12, 51, 32, 0.72);
