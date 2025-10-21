@@ -103,9 +103,15 @@
             :key="message.id"
             :class="['message', message.role]"
           >
+            <div class="message-avatar">
+              <img
+                :src="message.role === 'self' ? currentUser.avatar : selectedConversation.avatar"
+                :alt="message.role === 'self' ? currentUser.name : message.author"
+              />
+            </div>
             <div class="bubble">
               <p>{{ message.text }}</p>
-              <time>{{ message.time }}</time>
+
             </div>
           </li>
         </ul>
@@ -208,6 +214,11 @@ const highlights = [
     avatar: 'https://randomuser.me/api/portraits/women/17.jpg',
   },
 ]
+
+const currentUser = {
+  name: 'You 你',
+  avatar: 'https://i.pravatar.cc/150?img=68',
+}
 
 const threads = {
   1: [
@@ -337,7 +348,7 @@ const selectedConversation = computed(() => {
   if (!convo) return null
   return {
     ...convo,
-    displayName: `${convo.nameEn} ${convo.nameCn}`,
+    displayName: `${convo.nameEn}`,
   }
 })
 
@@ -675,23 +686,26 @@ onBeforeUnmount(() => {
   flex-direction: column;
   align-items: center;
   gap: 10px;
-  padding: 8px;
-  border-radius: 24px;
-  transition: transform 0.2s ease, box-shadow 0.2s ease;
+  transition: transform 0.2s ease;
 }
 
 .highlight:hover {
   transform: translateY(-4px);
-  box-shadow: 0 18px 32px rgba(64, 104, 82, 0.12);
+}
+
+.highlight:hover img {
+  transform: scale(1.05);
+  box-shadow: 0 14px 28px rgba(58, 96, 74, 0.22);
 }
 
 .highlight img {
-  width: 68px;
-  height: 68px;
+  width: 52px;
+  height: 52px;
   border-radius: 50%;
   object-fit: cover;
   border: 4px solid rgba(61, 191, 117, 0.85);
-  box-shadow: 0 10px 24px rgba(58, 96, 74, 0.18);
+  box-shadow: 0 8px 18px rgba(58, 96, 74, 0.18);
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
 }
 
 .highlight span {
@@ -802,14 +816,38 @@ onBeforeUnmount(() => {
 
 .message {
   display: flex;
+  align-items: flex-end;
+  gap: 12px;
 }
 
 .message.contact {
-  justify-content: flex-start;
+  flex-direction: row;
 }
 
 .message.self {
-  justify-content: flex-end;
+  flex-direction: row-reverse;
+}
+
+.message-avatar {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  overflow: hidden;
+  flex-shrink: 0;
+  border: 2px solid rgba(255, 255, 255, 0.92);
+  box-shadow: 0 6px 16px rgba(45, 75, 58, 0.14);
+  align-self: flex-start;
+}
+
+.message-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.message.self .message-avatar {
+  border-color: rgba(50, 195, 116, 0.6);
 }
 
 .bubble {
@@ -841,15 +879,7 @@ onBeforeUnmount(() => {
   line-height: 1.6;
 }
 
-.bubble time {
-  font-size: 11px;
-  color: #7b9488;
-  align-self: flex-end;
-}
 
-.message.self .bubble time {
-  color: rgba(10, 48, 30, 0.7);
-}
 
 .composer {
   margin-top: 32px;
