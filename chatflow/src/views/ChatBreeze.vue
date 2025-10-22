@@ -1,5 +1,19 @@
 <template>
   <div class="chat-breeze">
+    <aside class="sidebar-toolbar">
+      <div class="toolbar-avatar">
+        <img :src="currentUser.avatar" :alt="currentUser.name" />
+      </div>
+      <ul class="toolbar-actions">
+        <li v-for="action in toolbarActions" :key="action.id">
+          <button :title="action.label">
+            <span aria-hidden="true">{{ action.icon }}</span>
+            <span class="sr-only">{{ action.label }}</span>
+          </button>
+        </li>
+      </ul>
+    </aside>
+
     <aside class="sidebar" :style="{ width: sidebarWidth + 'px' }">
       <header class="sidebar-header">
         <h1>Messages 消息</h1>
@@ -220,6 +234,12 @@ const currentUser = {
   avatar: 'https://i.pravatar.cc/150?img=68',
 }
 
+const toolbarActions = [
+  { id: 'conversations', icon: '💬', label: '会话' },
+  { id: 'contacts', icon: '👥', label: '联系人' },
+  { id: 'settings', icon: '⚙️', label: '设置' },
+]
+
 const threads = {
   1: [
     {
@@ -392,6 +412,67 @@ onBeforeUnmount(() => {
   background: linear-gradient(135deg, #f1f7f3 0%, #f8fbf7 100%);
   color: #1f3526;
   font-family: 'Inter', 'Noto Sans SC', 'Microsoft YaHei', sans-serif;
+}
+
+.sidebar-toolbar {
+  width: 72px;
+  padding: 32px 0 32px;
+  background: rgba(255, 255, 255, 0.92);
+  border-right: 1px solid #e6efe5;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 24px;
+}
+
+.toolbar-avatar {
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  overflow: hidden;
+  box-shadow: 0 8px 18px rgba(32, 78, 55, 0.18);
+}
+
+.toolbar-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.toolbar-actions {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  align-items: center;
+}
+
+.toolbar-actions li button {
+  width: 44px;
+  height: 44px;
+  border-radius: 16px;
+  border: none;
+  background: linear-gradient(145deg, #ecf5ef, #ffffff);
+  box-shadow: 0 10px 20px rgba(54, 102, 74, 0.12);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 20px;
+  cursor: pointer;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.toolbar-actions li button:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 16px 26px rgba(54, 102, 74, 0.18);
+}
+
+.toolbar-actions li button:focus-visible {
+  outline: 3px solid rgba(52, 192, 115, 0.38);
+  outline-offset: 3px;
 }
 
 .sidebar {
@@ -926,6 +1007,11 @@ onBeforeUnmount(() => {
     padding: 24px;
   }
 
+  .sidebar-toolbar {
+    width: 64px;
+    padding: 24px 0;
+  }
+
   .welcome {
     padding: 32px;
   }
@@ -934,6 +1020,10 @@ onBeforeUnmount(() => {
 @media (max-width: 768px) {
   .chat-breeze {
     flex-direction: column;
+  }
+
+  .sidebar-toolbar {
+    display: none;
   }
 
   .sidebar {
