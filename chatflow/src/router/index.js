@@ -1,17 +1,19 @@
 import { createRouter, createWebHistory } from 'vue-router'
+import { getStoredAuthToken, clearStoredAuthToken, useAuthStore } from '@/stores/auth'
+import { validateAuthToken } from '@/services/authService'
 
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
   routes: [
     {
       path: '/',
-      redirect: '/chat/breeze',
+      redirect: '/login',
     },
     {
       path: '/login',
       name: 'Login',
       component: () => import('../views/LoginView.vue'),
-      meta: { showcase: '登录页面' },
+      meta: { showcase: '登录页面', guestOnly: true },
     },
     {
       path: '/chat/breeze',
@@ -20,6 +22,30 @@ const router = createRouter({
       meta: { showcase: '简约蓝白消息中心' },
     },
   ],
+})
+
+router.beforeEach(async (to) => {
+  if (import.meta.env.SSR) return true
+
+  if (to.meta?.guestOnly) {
+    const token = getStoredAuthToken()
+    if (!token) return true
+
+    const isValid = await validateAuthToken()
+    if (isValid) {
+      return { path: '/chat/breeze' }
+    }
+
+    clearStoredAuthToken()
+    try {
+      const authStore = useAuthStore()
+      authStore.clearToken()
+    } catch (error) {
+      console.warn('清理登录状态失败', error)
+    }
+  }
+
+  return true
 })
 
 export default router

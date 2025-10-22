@@ -26,8 +26,16 @@
         </nav>
       </header>
 
-      <LoginForm v-if="!isRegister" @submit="handleLoginSubmit" />
-      <RegisterForm v-else @submit="handleRegisterSubmit" />
+      <LoginForm
+        v-if="!isRegister"
+        @submit="handleLoginSubmit"
+        @success="handleLoginSuccess"
+      />
+      <RegisterForm
+        v-else
+        @submit="handleRegisterSubmit"
+        @success="handleRegisterSuccess"
+      />
 
       <p class="signup-hint">
         <span>{{ isRegister ? '已经有账户？' : '还没有账户？' }}</span>
@@ -41,9 +49,11 @@
 
 <script setup>
 import { computed, ref } from 'vue'
+import { useRouter } from 'vue-router'
 import LoginForm from '../components/auth/LoginForm.vue'
 import RegisterForm from '../components/auth/RegisterForm.vue'
 
+const router = useRouter()
 const activeTab = ref('login')
 
 const selectTab = (tab) => {
@@ -62,6 +72,16 @@ const handleLoginSubmit = (payload) => {
 
 const handleRegisterSubmit = (payload) => {
   console.log('注册信息', payload)
+}
+
+const handleRegisterSuccess = (payload) => {
+  console.log('注册成功', payload)
+  selectTab('login')
+}
+
+const handleLoginSuccess = ({ payload, data }) => {
+  console.log('登录成功', payload, data)
+  router.push('/chat/breeze')
 }
 </script>
 

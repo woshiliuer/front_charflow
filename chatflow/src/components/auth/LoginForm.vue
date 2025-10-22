@@ -29,19 +29,13 @@
           aria-label="切换密码可见性"
         >
           <span class="icon" aria-hidden="true">
-            <svg
-              v-if="showPassword"
-              viewBox="0 0 24 24"
-              role="presentation"
-            >
+            <svg v-if="showPassword" viewBox="0 0 24 24" role="presentation">
               <path
                 d="M3 6l18 12M9.88 9.94A3 3 0 0 1 12 9c3.75 0 6.75 3 9 6-1.05 1.51-2.35 2.85-3.87 3.86M13.83 13.9A3 3 0 0 1 12 15c-3.75 0-6.75-3-9-6 1.03-1.48 2.31-2.79 3.81-3.8"
               />
             </svg>
             <svg v-else viewBox="0 0 24 24" role="presentation">
-              <path
-                d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7S1 12 1 12z"
-              />
+              <path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7S1 12 1 12z" />
               <circle cx="12" cy="12" r="3" />
             </svg>
           </span>
@@ -57,14 +51,18 @@
       <a href="#" class="link">忘记密码?</a>
     </div>
 
-    <button type="submit" class="submit-button">登录</button>
+    <button type="submit" class="submit-button" :disabled="isSubmitting">
+      {{ isSubmitting ? '登录中…' : '登录' }}
+    </button>
   </form>
 </template>
 
 <script setup>
 import { reactive, ref } from 'vue'
+import { apiClient } from '@/services/apiClient'
+import { useAuthStore } from '@/stores/auth'
 
-const emit = defineEmits(['submit'])
+const emit = defineEmits(['submit', 'success'])
 
 const form = reactive({
   email: '',
@@ -73,13 +71,46 @@ const form = reactive({
 })
 
 const showPassword = ref(false)
+const isSubmitting = ref(false)
+const authStore = useAuthStore()
 
 const togglePassword = () => {
   showPassword.value = !showPassword.value
 }
 
-const handleSubmit = () => {
-  emit('submit', { ...form })
+const handleSubmit = async () => {
+  if (isSubmitting.value) return
+
+  if (!form.email) {
+    alert('请输入邮箱地址')
+    return
+  }
+
+  if (!form.password) {
+    alert('请输入密码')
+    return
+  }
+
+  try {
+    isSubmitting.value = true
+    const payload = {
+      email: form.email,
+      password: form.password,
+      remember: form.remember,
+    }
+
+    const { data } = await apiClient.post('/user/login', payload)
+    if (data) {
+      const token = typeof data === 'string' ? data : data.token ?? ''
+      authStore.setToken(token)
+    }
+    emit('submit', payload)
+    emit('success', { payload, data })
+  } catch (error) {
+    alert(error.message || '登录失败，请稍后重试')
+  } finally {
+    isSubmitting.value = false
+  }
 }
 </script>
 
@@ -225,5 +256,12 @@ const handleSubmit = () => {
 
 .submit-button:active {
   transform: translateY(1px);
+}
+
+.submit-button:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
+  box-shadow: none;
+  transform: none;
 }
 </style>
