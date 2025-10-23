@@ -1,12 +1,17 @@
-<template>
+﻿<template>
   <div class="chat-breeze">
     <aside class="sidebar-toolbar">
       <div class="toolbar-avatar">
-        <img :src="currentUser.avatar" :alt="currentUser.name" />
+        <img :src="currentUser.avatarFullUrl" :alt="currentUser.nickname" />
       </div>
       <ul class="toolbar-actions">
         <li v-for="action in toolbarActions" :key="action.id">
-          <button :title="action.label">
+          <button
+            :title="action.label"
+            :class="{ active: action.id === activeToolbar }"
+            type="button"
+            @click="selectToolbarAction(action.id)"
+          >
             <span aria-hidden="true">{{ action.icon }}</span>
             <span class="sr-only">{{ action.label }}</span>
           </button>
@@ -15,24 +20,47 @@
     </aside>
 
     <aside class="sidebar" :style="{ width: sidebarWidth + 'px' }">
-      <header class="sidebar-header">
-        <h1>Messages 消息</h1>
-        <div class="tools">
-          <button title="设置">
-            <span aria-hidden="true">⚙</span>
-            <span class="sr-only">Settings</span>
+    <header class="sidebar-header">
+      <h1>Messages 消息</h1>
+      <div class="tools" ref="toolsRef">
+        <button class="tool-button" type="button" title="设置">
+          <span aria-hidden="true">⚙️</span>
+          <span class="sr-only">Settings</span>
+        </button>
+        <div class="tool-create">
+          <button
+            class="tool-button"
+            type="button"
+            title="新建会话"
+            @click.stop="toggleCreateMenu"
+          >
+            <span aria-hidden="true">+</span>
+            <span class="sr-only">Create</span>
           </button>
-          <button title="新建会话">
-            <span aria-hidden="true">＋</span>
-            <span class="sr-only">New conversation</span>
-          </button>
+          <transition name="tool-menu-fade">
+            <ul v-if="showCreateMenu" class="tool-menu">
+              <li>
+                <button type="button" @click="handleStartGroup">
+                  <span class="tool-menu-icon">👥</span>
+                  <span>发起群聊</span>
+                </button>
+              </li>
+              <li>
+                <button type="button" @click="handleAddFriend">
+                  <span class="tool-menu-icon">🌱</span>
+                  <span>添加好友</span>
+                </button>
+              </li>
+            </ul>
+          </transition>
         </div>
-      </header>
+      </div>
+    </header>
 
       <div class="search">
         <input
           type="text"
-          placeholder="Search conversations... 搜索会话..."
+          :placeholder="searchPlaceholder"
           v-model="searchTerm"
         />
         <button title="搜索">
@@ -41,7 +69,10 @@
         </button>
       </div>
 
-      <ul class="conversation-list">
+      <ul
+        v-if="activeToolbar === 'conversations'"
+        class="conversation-list"
+      >
         <li
           v-for="item in filteredConversations"
           :key="item.id"
@@ -68,6 +99,15 @@
           </div>
         </li>
       </ul>
+      <ChatFriendsList
+        v-else-if="activeToolbar === 'contacts'"
+        :friends="filteredContacts"
+        :active-friend-id="activeFriendId"
+        @select="selectFriend"
+      />
+      <div v-else class="sidebar-placeholder">
+        <p>Settings will be available soon.</p>
+      </div>
 
       <div
         class="resize-handle"
@@ -86,23 +126,23 @@
           
       </header>
 
-        <!-- 加入分割线 -->
+        <!-- 鍔犲叆鍒嗗壊绾?-->
       <div class="divider"></div>
 
-      <main v-if="!selectedConversation" class="empty-state">
-        <div class="icon">💬</div>
-        <h2>Welcome to Messages 欢迎浏览留言</h2>
-        <p>
-          Select a conversation from the sidebar to start chatting with your contacts.<br />
-          从侧边栏中选择一个对话，开始与联系人聊天。
-        </p>
+    <main v-if="!selectedConversation" class="empty-state">
+      <div class="icon">💬</div>
+      <h2>Welcome to Messages 欢迎浏览留言</h2>
+      <p>
+        Select a conversation from the sidebar to start chatting with your contacts.<br />
+        从侧边栏中选择一个对话，开始与联系人聊天。
+      </p>
 
-        <ul class="features">
-          <li><span>🔒</span> End-to-end encrypted 端到端加密</li>
-          <li><span>⏱</span> Real-time sync 实时同步</li>
-          <li><span>📊</span> Insights 精确洞察</li>
-        </ul>
-      </main>
+      <ul class="features">
+        <li><span>🔒</span> End-to-end encrypted 端到端加密</li>
+        <li><span>⚡</span> Real-time sync 实时同步</li>
+        <li><span>📊</span> Insights 精准洞察</li>
+      </ul>
+    </main>
 
       <section v-else class="conversation-view">
         <header>
@@ -119,8 +159,8 @@
           >
             <div class="message-avatar">
               <img
-                :src="message.role === 'self' ? currentUser.avatar : selectedConversation.avatar"
-                :alt="message.role === 'self' ? currentUser.name : message.author"
+                :src="message.role === 'self' ? currentUser.avatarFullUrl : selectedConversation.avatar"
+                :alt="message.role === 'self' ? currentUser.nickname : message.author"
               />
             </div>
             <div class="bubble">
@@ -130,18 +170,94 @@
           </li>
         </ul>
 
-        <footer class="composer">
-          <input type="text" placeholder="输入消息..." v-model="draft" />
-          <button type="button">发送</button>
-        </footer>
+      <footer class="composer">
+        <input type="text" placeholder="输入消息..." v-model="draft" />
+        <button type="button">发送</button>
+      </footer>
       </section>
     </section>
+    <transition name="friend-modal-fade">
+      <div
+        v-if="showFriendModal && selectedFriend"
+        class="friend-modal-overlay"
+        @click.self="closeFriendModal"
+      >
+        <div class="friend-modal-card">
+          <button
+            type="button"
+            class="friend-modal-close"
+            aria-label="关闭好友详情"
+            @click="closeFriendModal"
+          >
+            &times;
+          </button>
+          <div class="friend-modal-header">
+            <div class="friend-modal-avatar">
+              <img
+                :src="selectedFriend.avatar"
+                :alt="selectedFriend.nickname || selectedFriend.nameEn"
+              />
+              <span
+                v-if="selectedFriend.status"
+                :class="['friend-status', selectedFriend.status]"
+              />
+            </div>
+            <div class="friend-modal-title">
+              <h3>{{ selectedFriend.nickname || selectedFriend.nameEn }}</h3>
+              <p class="friend-modal-subtitle">
+                {{ selectedFriend.nameEn }}
+                <span v-if="selectedFriend.nameCn"> · {{ selectedFriend.nameCn }}</span>
+              </p>
+              <p class="friend-modal-remark">
+                {{ selectedFriend.remark || '暂无备注' }}
+              </p>
+            </div>
+          </div>
+          <div class="friend-modal-body">
+            <dl>
+              <div class="friend-modal-row">
+                <dt>备注</dt>
+                <dd>{{ selectedFriend.remark || '暂无备注' }}</dd>
+              </div>
+              <div class="friend-modal-row">
+                <dt>昵称</dt>
+                <dd>{{ selectedFriend.nickname || selectedFriend.nameEn }}</dd>
+              </div>
+              <div class="friend-modal-row">
+                <dt>邮箱</dt>
+                <dd>{{ selectedFriend.email || '未提供邮箱' }}</dd>
+              </div>
+              <div class="friend-modal-row">
+                <dt>个性签名</dt>
+                <dd>{{ selectedFriend.signature || '这位好友还没有写签名' }}</dd>
+              </div>
+            </dl>
+          </div>
+          <div class="friend-modal-actions">
+            <button
+              type="button"
+              class="friend-modal-action"
+              @click="handleSendMessageToFriend"
+            >
+              发消息
+            </button>
+          </div>
+        </div>
+      </div>
+    </transition>
+    <AddFriendModal
+      :visible="showAddFriendModal"
+      @close="closeAddFriendModal"
+    />
+
   </div>
 </template>
 
 <script setup>
-import { ref, computed, onBeforeUnmount } from 'vue'
-
+import { ref, computed, onMounted, onBeforeUnmount, reactive } from 'vue'
+import ChatFriendsList from '@/components/chat/ChatFriendsList.vue'
+import AddFriendModal from '@/components/chat/AddFriendModal.vue'
+import { apiClient } from '@/services/apiClient'
 const conversations = [
   {
     id: 1,
@@ -149,7 +265,7 @@ const conversations = [
     nameCn: '莎拉·约翰逊',
     period: '下午',
     clock: '2:30',
-    snippet: 'Hey! How are you doing today? 嗨，你今天过得怎么样？',
+    snippet: '嘿！你今天过得怎么样？',
     unread: 3,
     status: 'online',
     avatar: 'https://randomuser.me/api/portraits/women/9.jpg',
@@ -160,7 +276,7 @@ const conversations = [
     nameCn: '设计团队',
     period: '下午',
     clock: '1:45',
-    snippet: '[Image] 新的 banner 请确认',
+    snippet: '[图片] 新的 banner 请确认',
     unread: 12,
     status: 'online',
     avatar: 'https://images.unsplash.com/photo-1521737604893-d14cc237f11d?auto=format&fit=crop&w=120&q=80',
@@ -171,7 +287,7 @@ const conversations = [
     nameCn: '麦克·陈',
     period: '中午',
     clock: '12:20',
-    snippet: '[Voice Message] 语音留言待听',
+    snippet: '[语音消息] 语音留言待听',
     unread: 0,
     status: 'away',
     avatar: 'https://randomuser.me/api/portraits/men/32.jpg',
@@ -179,10 +295,10 @@ const conversations = [
   {
     id: 4,
     nameEn: 'Project Alpha',
-    nameCn: '项目甲',
+    nameCn: '项目A',
     period: '上午',
     clock: '11:30',
-    snippet: 'Meeting scheduled for 3 PM. 会议下午 3 点开始',
+    snippet: '会议下午 3 点开始',
     unread: 5,
     status: 'online',
     avatar: 'https://images.unsplash.com/photo-1522196772883-393d879eb14d?auto=format&fit=crop&w=120&q=80',
@@ -193,7 +309,7 @@ const conversations = [
     nameCn: '艾玛·威尔逊',
     period: '上午',
     clock: '10:15',
-    snippet: '[File] PRD 初稿在附件',
+    snippet: '[文件] PRD 初稿在附件',
     unread: 0,
     status: 'offline',
     avatar: 'https://randomuser.me/api/portraits/women/17.jpg',
@@ -204,7 +320,7 @@ const conversations = [
     nameCn: '研发团队',
     period: '昨天',
     clock: '20:05',
-    snippet: 'Bug fixes have been deployed. 缺陷修复已部署',
+    snippet: '缺陷修复已经部署',
     unread: 0,
     status: 'online',
     avatar: 'https://images.unsplash.com/photo-1454165205744-3b78555e5572?auto=format&fit=crop&w=120&q=80',
@@ -214,25 +330,88 @@ const conversations = [
 const highlights = [
   {
     id: 1,
-    name: 'Sarah 莎拉',
+    name: 'Sarah 鑾庢媺',
     avatar: 'https://randomuser.me/api/portraits/women/9.jpg',
   },
   {
     id: 3,
-    name: 'Mike 麦克',
+    name: 'Mike 楹﹀厠',
     avatar: 'https://randomuser.me/api/portraits/men/32.jpg',
   },
   {
     id: 5,
-    name: 'Emma 艾玛',
+    name: 'Emma 鑹剧帥',
     avatar: 'https://randomuser.me/api/portraits/women/17.jpg',
   },
 ]
 
-const currentUser = {
-  name: 'You 你',
-  avatar: 'https://i.pravatar.cc/150?img=68',
-}
+const contacts = [
+  {
+    id: 'c1',
+    nameEn: 'Ava Thompson',
+    nameCn: '',
+    status: 'online',
+    avatar: 'https://randomuser.me/api/portraits/women/65.jpg',
+    description: 'Product Manager, Remote',
+    lastActive: 'Online',
+    nickname: 'Ava',
+    email: 'ava.thompson@example.com',
+    remark: 'Roadmap 协作伙伴',
+    signature: 'Keep shipping delightful experiences.',
+  },
+  {
+    id: 'c2',
+    nameEn: 'Jason Lee',
+    nameCn: '',
+    status: 'away',
+    avatar: 'https://randomuser.me/api/portraits/men/12.jpg',
+    description: 'UX Researcher, Seoul',
+    lastActive: '2 min ago',
+    nickname: 'Jay',
+    email: 'jason.lee@example.com',
+    remark: '设计反馈第一联系人',
+    signature: 'Design is thinking made visual.',
+  },
+  {
+    id: 'c3',
+    nameEn: 'Priya Patel',
+    nameCn: '',
+    status: 'online',
+    avatar: 'https://randomuser.me/api/portraits/women/33.jpg',
+    description: 'Data Scientist, Mumbai',
+    lastActive: 'Online',
+    nickname: 'Pri',
+    email: 'priya.patel@example.com',
+    remark: '数据支持 & 分析',
+    signature: 'Turning data into quiet stories.',
+  },
+  {
+    id: 'c4',
+    nameEn: 'Noah Garcia',
+    nameCn: '',
+    status: 'offline',
+    avatar: 'https://randomuser.me/api/portraits/men/71.jpg',
+    description: 'Backend Engineer, Madrid',
+    lastActive: '1 hr ago',
+    nickname: 'Noah G.',
+    email: 'noah.garcia@example.com',
+    remark: '后端联调负责人',
+    signature: 'APIs with a touch of espresso.',
+  },
+  {
+    id: 'c5',
+    nameEn: 'Sofia Rossi',
+    nameCn: '',
+    status: 'online',
+    avatar: 'https://randomuser.me/api/portraits/women/21.jpg',
+    description: 'Marketing Lead, Milan',
+    lastActive: 'Online',
+    nickname: 'Sofi',
+    email: 'sofia.rossi@example.com',
+    remark: 'Campaign 同步窗口',
+    signature: 'Stories that connect hearts.',
+  },
+]
 
 const toolbarActions = [
   { id: 'conversations', icon: '💬', label: '会话' },
@@ -241,111 +420,122 @@ const toolbarActions = [
 ]
 
 const threads = {
-  1: [
+  "1": [
     {
       id: 1,
-      role: 'contact',
-      author: 'Sarah Johnson',
-      text: 'Hey! How are you doing today? 嗨，你今天过得怎么样？',
-      time: '14:25',
+      role: "contact",
+      author: "Sarah Johnson",
+      text: "嘿！你今天过得怎么样？",
+      time: "14:25",
     },
     {
       id: 2,
-      role: 'self',
-      author: '我',
-      text: '状态不错，刚整理完信息卡片。稍后发给你。',
-      time: '14:27',
+      role: "self",
+      author: "我",
+      text: "状态不错，刚整理完信息卡片。稍后发给你。",
+      time: "14:27",
     },
   ],
-  2: [
+  "2": [
     {
       id: 1,
-      role: 'contact',
-      author: 'Design Team',
-      text: '新的配色方案已经发到群里邮件。',
-      time: '13:40',
+      role: "contact",
+      author: "设计团队",
+      text: "新的配色方案已经发到群里邮件。",
+      time: "13:40",
     },
     {
       id: 2,
-      role: 'self',
-      author: '我',
-      text: '收到，我会在今晚前反馈，感谢。',
-      time: '13:42',
+      role: "self",
+      author: "我",
+      text: "收到，我会在今晚前反馈，感谢。",
+      time: "13:42",
     },
   ],
-  3: [
+  "3": [
     {
       id: 1,
-      role: 'contact',
-      author: 'Mike Chen',
-      text: '开会资料已经上传到云盘。',
-      time: '12:20',
+      role: "contact",
+      author: "Mike Chen",
+      text: "会议资料已经上传到云盘。",
+      time: "12:20",
     },
     {
       id: 2,
-      role: 'self',
-      author: '我',
-      text: '好的，我午餐后立即查看。',
-      time: '12:22',
+      role: "self",
+      author: "我",
+      text: "好的，我午饭后立即查看。",
+      time: "12:22",
     },
   ],
-  4: [
+  "4": [
     {
       id: 1,
-      role: 'contact',
-      author: 'Project Alpha',
-      text: '别忘了下午的同步会议。',
-      time: '11:30',
+      role: "contact",
+      author: "项目Alpha",
+      text: "别忘了下午的同步会议。",
+      time: "11:30",
     },
     {
       id: 2,
-      role: 'self',
-      author: '我',
-      text: '放心，我会提前十分钟准备。',
-      time: '11:33',
+      role: "self",
+      author: "我",
+      text: "放心，我会提前十分钟准备。",
+      time: "11:33",
     },
   ],
-  5: [
+  "5": [
     {
       id: 1,
-      role: 'contact',
-      author: 'Emma Wilson',
-      text: '附件里是初版 PRD，请审阅。',
-      time: '10:15',
+      role: "contact",
+      author: "Emma Wilson",
+      text: "附件里是初版PRD，请审阅。",
+      time: "10:15",
     },
     {
       id: 2,
-      role: 'self',
-      author: '我',
-      text: '谢谢，稍后给你反馈意见。',
-      time: '10:18',
+      role: "self",
+      author: "我",
+      text: "谢谢，稍后给你反馈意见。",
+      time: "10:18",
     },
   ],
-  6: [
+  "6": [
     {
       id: 1,
-      role: 'contact',
-      author: 'Development Team',
-      text: 'Bug 修复已经上线，请关注监控。',
-      time: '昨天 20:05',
+      role: "contact",
+      author: "开发团队",
+      text: "Bug修复已经上线，请关注监控。",
+      time: "昨天 20:05",
     },
     {
       id: 2,
-      role: 'self',
-      author: '我',
-      text: '收到，如有异常我会第一时间报告。',
-      time: '昨天 20:10',
+      role: "self",
+      author: "我",
+      text: "收到，如有异常我会第一时间报告。",
+      time: "昨天 20:10",
     },
   ],
-}
+};
+
 
 const activeConversationId = ref(null)
+const activeFriendId = ref(null)
+const activeToolbar = ref('conversations')
 const sidebarWidth = ref(320)
 const isResizing = ref(false)
 const startX = ref(0)
 const startWidth = ref(sidebarWidth.value)
 const searchTerm = ref('')
 const draft = ref('')
+const showFriendModal = ref(false)
+const showCreateMenu = ref(false)
+const toolsRef = ref(null)
+const showAddFriendModal = ref(false)
+
+const searchPlaceholder = computed(() =>
+  activeToolbar.value === 'contacts' ? 'Search friends...' : 'Search conversations...',
+)
 
 const filteredConversations = computed(() => {
   if (!searchTerm.value.trim()) return conversations
@@ -358,9 +548,39 @@ const filteredConversations = computed(() => {
     )
   })
 })
+const filteredContacts = computed(() => {
+  if (!searchTerm.value.trim()) return contacts
+  const keyword = searchTerm.value.trim().toLowerCase()
+  const rawKeyword = searchTerm.value.trim()
+  return contacts.filter((friend) => {
+    const matchesEn = friend.nameEn.toLowerCase().includes(keyword)
+    const matchesCn = friend.nameCn ? friend.nameCn.includes(rawKeyword) : false
+    const matchesDescription = friend.description
+      ? friend.description.toLowerCase().includes(keyword)
+      : false
+    return matchesEn || matchesCn || matchesDescription
+  })
+})
+
+const selectedFriend = computed(() => {
+  return contacts.find((friend) => friend.id === activeFriendId.value) || null
+})
+
+const toggleCreateMenu = () => {
+  showCreateMenu.value = !showCreateMenu.value
+}
+
+const handleGlobalClick = (event) => {
+  if (!showCreateMenu.value) return
+  if (toolsRef.value && toolsRef.value.contains(event.target)) return
+  showCreateMenu.value = false
+}
 
 const selectConversation = (id) => {
   activeConversationId.value = id
+  activeToolbar.value = 'conversations'
+  showCreateMenu.value = false
+  showFriendModal.value = false
 }
 
 const selectedConversation = computed(() => {
@@ -376,6 +596,56 @@ const selectedThread = computed(() => {
   if (!activeConversationId.value) return []
   return threads[activeConversationId.value] || []
 })
+const selectToolbarAction = (id) => {
+  activeToolbar.value = id
+  showCreateMenu.value = false
+  showAddFriendModal.value = false
+  if (id !== 'contacts') {
+    showFriendModal.value = false
+  }
+  if (id === 'contacts' && !activeFriendId.value && filteredContacts.value.length) {
+    activeFriendId.value = filteredContacts.value[0].id
+  }
+}
+
+
+const selectFriend = (id) => {
+  activeFriendId.value = id
+  if (id) {
+    showFriendModal.value = true
+  }
+}
+
+const closeFriendModal = () => {
+  showFriendModal.value = false
+}
+
+
+const closeAddFriendModal = () => {
+  showAddFriendModal.value = false
+}
+
+const handleSendMessageToFriend = () => {
+  if (!selectedFriend.value) return
+  const mention = selectedFriend.value.nickname || selectedFriend.value.nameEn
+  draft.value = `@${mention} `
+  showFriendModal.value = false
+  activeToolbar.value = 'conversations'
+}
+
+const handleStartGroup = () => {
+  showCreateMenu.value = false
+  selectToolbarAction('conversations')
+  activeConversationId.value = null
+  draft.value = '群聊主题：'
+}
+
+
+const handleAddFriend = () => {
+  showCreateMenu.value = false
+  showFriendModal.value = false
+  showAddFriendModal.value = true
+}
 
 const onResizeMouseDown = (event) => {
   isResizing.value = true
@@ -399,10 +669,35 @@ const onMouseUp = () => {
   window.removeEventListener('mouseup', onMouseUp)
 }
 
+onMounted(() => {
+  window.addEventListener('click', handleGlobalClick)
+})
+
 onBeforeUnmount(() => {
   window.removeEventListener('mousemove', onMouseMove)
   window.removeEventListener('mouseup', onMouseUp)
+  window.removeEventListener('click', handleGlobalClick)
 })
+
+let currentUser = reactive({
+  email: '',
+  nickname: '',
+  avatarFullUrl: '',
+})
+
+const getUserInfo = async () => {
+
+    const { data } = await apiClient.get('/user/getUserInfo')
+    if (data){
+        currentUser.email = data.email
+        currentUser.nickname = data.nickname
+        currentUser.avatarFullUrl = data.avatarFullUrl
+    }
+      console.log(currentUser)
+}
+
+getUserInfo()
+
 </script>
 
 <style scoped>
@@ -465,6 +760,12 @@ onBeforeUnmount(() => {
   transition: transform 0.2s ease, box-shadow 0.2s ease;
 }
 
+.toolbar-actions li button.active {
+  transform: translateY(-3px);
+  box-shadow: 0 18px 28px rgba(54, 102, 74, 0.22);
+  background: linear-gradient(145deg, #d5f1df, #ffffff);
+}
+
 .toolbar-actions li button:hover {
   transform: translateY(-3px);
   box-shadow: 0 16px 26px rgba(54, 102, 74, 0.18);
@@ -505,14 +806,15 @@ onBeforeUnmount(() => {
 .tools {
   display: flex;
   gap: 12px;
+  align-items: center;
 }
 
-.tools button {
+.tool-button {
   width: 40px;
   height: 40px;
   border-radius: 50%;
   border: none;
-  background: #eef7f0;
+  background: linear-gradient(145deg, #ecf5ef, #ffffff);
   color: #1c7c4f;
   font-size: 18px;
   display: flex;
@@ -520,11 +822,95 @@ onBeforeUnmount(() => {
   justify-content: center;
   cursor: pointer;
   transition: transform 0.2s ease, box-shadow 0.2s ease;
+  box-shadow: 0 8px 16px rgba(33, 132, 82, 0.16);
 }
 
-.tools button:hover {
+.tool-button:hover {
   transform: translateY(-2px);
   box-shadow: 0 8px 16px rgba(33, 132, 82, 0.15);
+}
+
+.tool-button:focus-visible {
+  outline: 3px solid rgba(52, 192, 115, 0.32);
+  outline-offset: 2px;
+}
+
+.tool-create {
+  position: relative;
+}
+
+.tool-menu-fade-enter-active,
+.tool-menu-fade-leave-active {
+  transition: opacity 0.18s ease, transform 0.18s ease;
+}
+
+.tool-menu-fade-enter-from,
+.tool-menu-fade-leave-to {
+  opacity: 0;
+  transform: translateY(-6px);
+}
+
+.tool-menu {
+  position: absolute;
+  top: calc(100% + 10px);
+  right: 0;
+  width: 168px;
+  padding: 14px 0;
+  margin: 0;
+  list-style: none;
+  border-radius: 18px;
+  background: linear-gradient(160deg, rgba(255, 255, 255, 0.98), rgba(219, 239, 227, 0.96));
+  box-shadow: 0 20px 36px rgba(35, 79, 55, 0.18);
+  border: 1px solid rgba(198, 221, 207, 0.6);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  z-index: 20;
+  backdrop-filter: blur(6px);
+}
+
+.tool-menu li {
+  width: 100%;
+}
+
+.tool-menu button {
+  width: 100%;
+  border: none;
+  background: transparent;
+  color: #1f3526;
+  font-size: 14px;
+  padding: 10px 18px;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.18s ease, transform 0.18s ease;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.tool-menu button:hover {
+  background: rgba(50, 195, 116, 0.12);
+  color: #135539;
+  transform: translateX(2px);
+}
+
+.tool-menu button:hover .tool-menu-icon {
+  background: linear-gradient(135deg, #32c374, #1da368);
+  color: #ffffff;
+  box-shadow: 0 8px 16px rgba(45, 176, 103, 0.24);
+}
+
+.tool-menu-icon {
+  width: 28px;
+  height: 28px;
+  border-radius: 12px;
+  background: rgba(50, 195, 116, 0.12);
+  color: #1d7a4b;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+  box-shadow: inset 0 0 0 1px rgba(50, 195, 116, 0.24);
 }
 
 .sr-only {
@@ -659,7 +1045,7 @@ onBeforeUnmount(() => {
 .info .row {
   display: flex;
   align-items: center;
-  align-items: flex-start; /* 顶部对齐 */
+  align-items: flex-start; /* 椤堕儴瀵归綈 */
 }
 
 
@@ -700,11 +1086,11 @@ onBeforeUnmount(() => {
   color: #fff;
   width: 18px;
   height: 18px;
-  border-radius: 50%;            /* 完全圆形 */
+  border-radius: 50%;            /* 瀹屽叏鍦嗗舰 */
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 10px;               /* 字体更细 */
+  font-size: 10px;               /* 瀛椾綋鏇寸粏 */
   font-weight: 600;
   line-height: 1;
   box-shadow: 0 2px 6px rgba(231, 75, 75, 0.25);
@@ -1001,6 +1387,206 @@ onBeforeUnmount(() => {
   transform: translateY(-2px);
   box-shadow: 0 16px 24px rgba(45, 176, 103, 0.28);
 }
+.friend-modal-fade-enter-active,
+.friend-modal-fade-leave-active {
+  transition: opacity 0.24s ease;
+}
+
+.friend-modal-fade-enter-from,
+.friend-modal-fade-leave-to {
+  opacity: 0;
+}
+
+.friend-modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 40, 27, 0.48);
+  backdrop-filter: blur(8px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 32px 24px;
+  z-index: 1200;
+}
+
+.friend-modal-card {
+  width: 420px;
+  max-width: 100%;
+  background: linear-gradient(150deg, rgba(255, 255, 255, 0.98), rgba(221, 239, 228, 0.94));
+  border-radius: 24px;
+  box-shadow: 0 28px 50px rgba(31, 53, 38, 0.26);
+  padding: 32px 34px;
+  color: #1f3526;
+  position: relative;
+}
+
+.friend-modal-close {
+  position: absolute;
+  top: 18px;
+  right: 20px;
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  border: none;
+  background: rgba(255, 255, 255, 0.86);
+  color: #2a4c38;
+  font-size: 20px;
+  line-height: 1;
+  cursor: pointer;
+  box-shadow: 0 6px 16px rgba(31, 53, 38, 0.16);
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.friend-modal-close:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 10px 22px rgba(31, 53, 38, 0.22);
+}
+
+.friend-modal-header {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  margin-bottom: 24px;
+}
+
+.friend-modal-avatar {
+  width: 82px;
+  height: 82px;
+  border-radius: 24px;
+  overflow: hidden;
+  position: relative;
+  flex-shrink: 0;
+  box-shadow: 0 16px 32px rgba(36, 75, 52, 0.22);
+}
+
+.friend-modal-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.friend-status {
+  position: absolute;
+  bottom: 10px;
+  right: 10px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 3px solid rgba(255, 255, 255, 0.92);
+}
+
+.friend-status.online {
+  background: #31c374;
+}
+
+.friend-status.away {
+  background: #f7b84d;
+}
+
+.friend-status.offline {
+  background: #bcc5c0;
+}
+
+.friend-modal-title h3 {
+  margin: 0;
+  font-size: 22px;
+  font-weight: 700;
+}
+
+.friend-modal-subtitle {
+  margin: 6px 0 0;
+  font-size: 14px;
+  color: #58725f;
+}
+
+.friend-modal-remark {
+  margin: 10px 0 0;
+  font-size: 14px;
+  color: #1f3526;
+  font-weight: 500;
+}
+
+.friend-modal-body {
+  padding-top: 18px;
+  border-top: 1px solid rgba(198, 221, 207, 0.6);
+}
+
+.friend-modal-body dl {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.friend-modal-row {
+  display: flex;
+  gap: 12px;
+}
+
+.friend-modal-row dt {
+  width: 72px;
+  font-size: 13px;
+  color: #6b8574;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  line-height: 1.5;
+  flex-shrink: 0;
+}
+
+.friend-modal-row dd {
+  margin: 0;
+  font-size: 15px;
+  color: #264736;
+  line-height: 1.6;
+}
+
+.friend-modal-row:last-child dd {
+  font-style: italic;
+  color: #395848;
+}
+
+.friend-modal-actions {
+  margin-top: 28px;
+  display: flex;
+  justify-content: center;
+}
+
+.friend-modal-action {
+  border: none;
+  border-radius: 16px;
+  padding: 12px 24px;
+  background: linear-gradient(135deg, #32c374, #1da368);
+  color: #ffffff;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  box-shadow: 0 16px 26px rgba(45, 176, 103, 0.28);
+  transition: transform 0.18s ease, box-shadow 0.18s ease;
+}
+
+.friend-modal-action:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 20px 32px rgba(45, 176, 103, 0.34);
+}
+to {
+    transform: rotate(360deg);
+  }
+
+
+.sidebar-placeholder {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.6);
+  color: #58725f;
+  font-size: 14px;
+  text-align: center;
+  box-shadow: inset 0 0 0 1px rgba(198, 221, 207, 0.4);
+}
 
 @media (max-width: 1024px) {
   .sidebar {
@@ -1051,5 +1637,19 @@ onBeforeUnmount(() => {
   .bubble {
     max-width: 72%;
   }
+
+  .friend-modal-overlay {
+    align-items: flex-end;
+    padding: 24px 16px;
+  }
+
+  .friend-modal-card {
+    width: 100%;
+    padding: 24px 22px 28px;
+    border-radius: 20px;
+  }
 }
 </style>
+
+
+
