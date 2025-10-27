@@ -133,11 +133,20 @@
 
 <script setup>
 import { ref, watch } from 'vue'
+import { apiClient } from '@/services/apiClient'
 
 const props = defineProps({
   visible: {
     type: Boolean,
     default: false,
+  },
+  currentUserId: {
+    type: [Number, String],
+    default: null,
+  },
+  currentUserEmail: {
+    type: String,
+    default: '',
   },
 })
 
@@ -150,44 +159,6 @@ const errorMessage = ref('')
 const successMessage = ref('')
 const results = ref([])
 const selectedResult = ref(null)
-
-const MOCK_USERS = [
-  {
-    id: 'u1',
-    nickname: 'Ava Thompson',
-    name: 'Ava Thompson',
-    email: 'ava.thompson@example.com',
-    avatar: 'https://randomuser.me/api/portraits/women/65.jpg',
-  },
-  {
-    id: 'u2',
-    nickname: 'Jason Lee',
-    name: 'Jason Lee',
-    email: 'jason.lee@example.com',
-    avatar: 'https://randomuser.me/api/portraits/men/12.jpg',
-  },
-  {
-    id: 'u3',
-    nickname: 'Priya Patel',
-    name: 'Priya Patel',
-    email: 'priya.patel@example.com',
-    avatar: 'https://randomuser.me/api/portraits/women/33.jpg',
-  },
-  {
-    id: 'u4',
-    nickname: 'Noah Garcia',
-    name: 'Noah Garcia',
-    email: 'noah.garcia@example.com',
-    avatar: 'https://randomuser.me/api/portraits/men/71.jpg',
-  },
-  {
-    id: 'u5',
-    nickname: 'Sofia Rossi',
-    name: 'Sofia Rossi',
-    email: 'sofia.rossi@example.com',
-    avatar: 'https://randomuser.me/api/portraits/women/21.jpg',
-  },
-]
 
 const resetState = () => {
   email.value = ''
@@ -233,16 +204,25 @@ const searchAddFriend = async () => {
   successMessage.value = ''
   results.value = []
   selectedResult.value = null
-  await new Promise((resolve) => setTimeout(resolve, 500))
-  const lowerEmail = trimmed.toLowerCase()
-  const filtered = MOCK_USERS.filter((user) =>
-    (user.email || '').toLowerCase().includes(lowerEmail),
-  )
-  if (!filtered.length) {
-    errorMessage.value = '未找到匹配的用户'
+  try {
+    const { data } = await apiClient.post('/user/getUserInfoByEmail', {
+      param: trimmed,
+    })
+    const rawResults = Array.isArray(data)
+      ? data
+      : data
+      ? [data]
+      : []
+    if (!rawResults.length) {
+      errorMessage.value = '未找到匹配的用户'
+      return
+    }
+    results.value = rawResults
+  } catch (error) {
+    errorMessage.value = error?.message || '搜索失败，请稍后重试'
+  } finally {
+    isLoading.value = false
   }
-  results.value = filtered
-  isLoading.value = false
 }
 
 const selectResult = (user) => {
@@ -253,13 +233,56 @@ const selectResult = (user) => {
 
 const submitAddFriendRequest = async () => {
   if (!selectedResult.value || isSubmitting.value) return
+  const receiverId = selectedResult.value.id
+  if (!receiverId && receiverId !== 0) {
+    errorMessage.value = '未获取到好友信息，无法发送请求'
+    return
+  }
+  const isSameUserById =
+    props.currentUserId !== null &&
+    props.currentUserId !== undefined &&
+    (receiverId === props.currentUserId ||
+      String(receiverId) === String(props.currentUserId))
+  const isSameUserByEmail =
+    props.currentUserEmail &&
+    typeof selectedResult.value.email === 'string' &&
+    selectedResult.value.email.toLowerCase() ===
+      props.currentUserEmail.toLowerCase()
+  if (isSameUserById || isSameUserByEmail) {
+    errorMessage.value = '不能添加自己为好友'
+    return
+  }
   isSubmitting.value = true
   errorMessage.value = ''
   successMessage.value = ''
-  await new Promise((resolve) => setTimeout(resolve, 600))
-  successMessage.value = '好友请求已发送，请等待对方确认'
-  emit('friend-added', selectedResult.value)
-  isSubmitting.value = false
+  try {
+    const payload = {
+      receiverId,
+      applyMessage:
+        selectedResult.value.nickname || selectedResult.value.name
+          ? `你好，我是${selectedResult.value.nickname || selectedResult.value.name}`
+          : '你好，我想添加你为好友',
+      remark:
+        selectedResult.value.nickname ||
+        selectedResult.value.name ||
+        selectedResult.value.email ||
+        '好友',
+    }
+    const { data, message } = await apiClient.post(
+      '/friend/addFriendRequest',
+      payload,
+    )
+    const responseMessage =
+      (typeof data === 'string' && data) ||
+      message ||
+      '好友请求已发送，请等待对方确认'
+    successMessage.value = responseMessage
+    emit('friend-added', { ...selectedResult.value, receiverId })
+  } catch (error) {
+    errorMessage.value = error?.message || '好友请求发送失败，请稍后重试'
+  } finally {
+    isSubmitting.value = false
+  }
 }
 </script>
 

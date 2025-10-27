@@ -99,12 +99,16 @@
           </div>
         </li>
       </ul>
-      <ChatFriendsList
-        v-else-if="activeToolbar === 'contacts'"
-        :friends="filteredContacts"
-        :active-friend-id="activeFriendId"
-        @select="selectFriend"
-      />
+    <ContactsDirectory
+      v-else-if="activeToolbar === 'contacts'"
+      :friend-requests="friendRequests"
+      :friends="filteredContacts"
+      :active-friend-id="activeFriendId"
+      :pending-count="friendRequests.pendingCount"
+      @select-friend="selectFriend"
+      @approve-request="handleApproveFriendRequest"
+      @reject-request="handleRejectFriendRequest"
+    />
       <div v-else class="sidebar-placeholder">
         <p>Settings will be available soon.</p>
       </div>
@@ -247,7 +251,19 @@
     </transition>
     <AddFriendModal
       :visible="showAddFriendModal"
+      :current-user-id="currentUser.id"
+      :current-user-email="currentUser.email"
       @close="closeAddFriendModal"
+      @friend-added="handleFriendAdded"
+    />
+    <FriendRemarkModal
+      :visible="showApproveRemarkModal"
+      :friend-name="pendingApproveName"
+      :remark="remarkDraft"
+      :loading="isProcessingFriendRequest"
+      @update:remark="updateRemarkDraft"
+      @cancel="closeApproveRemarkModal"
+      @confirm="confirmApproveFriendRequest"
     />
 
   </div>
@@ -255,8 +271,9 @@
 
 <script setup>
 import { ref, computed, onMounted, onBeforeUnmount, reactive } from 'vue'
-import ChatFriendsList from '@/components/chat/ChatFriendsList.vue'
+import ContactsDirectory from '@/components/chat/ContactsDirectory.vue'
 import AddFriendModal from '@/components/chat/AddFriendModal.vue'
+import FriendRemarkModal from '@/components/chat/FriendRemarkModal.vue'
 import { apiClient } from '@/services/apiClient'
 const conversations = [
   {
@@ -413,9 +430,102 @@ const contacts = [
   },
 ]
 
+const friendRequests = reactive({
+  incoming: [],
+  outgoing: [],
+  pendingCount: 0,
+})
+
+const getRequestDisplayName = (request) => {
+  if (!request) return '这位用户'
+  if (request.nickname) return request.nickname
+  if (request.userId !== undefined && request.userId !== null) {
+    return `用户 #${request.userId}`
+  }
+  return '这位用户'
+}
+
+const formatTimeHint = (timestamp) => {
+  if (!timestamp) return '刚刚'
+  let ms = Number(timestamp)
+  if (!Number.isFinite(ms)) return '刚刚'
+  if (ms < 1e12) {
+    ms *= 1000
+  }
+  const date = new Date(ms)
+  if (Number.isNaN(date.getTime())) return '刚刚'
+  const diff = Date.now() - date.getTime()
+  const minute = 60 * 1000
+  const hour = 60 * minute
+  const day = 24 * hour
+  if (diff < 0) {
+    return date.toLocaleString('zh-CN', { hour12: false })
+  }
+  if (diff < minute) return '刚刚'
+  if (diff < hour) return `${Math.max(1, Math.floor(diff / minute))} 分钟前`
+  if (diff < day) return `${Math.max(1, Math.floor(diff / hour))} 小时前`
+  return date.toLocaleString('zh-CN', { hour12: false })
+}
+
+const loadFriendRequests = async () => {
+  try {
+    const { data } = await apiClient.get('/friend/friendRequestList')
+    const list = Array.isArray(data)
+      ? data
+      : Array.isArray(data?.friendRequestList)
+      ? data.friendRequestList
+      : []
+    const pendingCount =
+      typeof data?.pendingCount === 'number' && data.pendingCount >= 0
+        ? data.pendingCount
+        : list.filter(
+            (item) => Number(item?.requestStatus) === 0 && Number(item?.applyDirection) !== 1,
+          ).length
+    if (!Array.isArray(list)) {
+      friendRequests.incoming = []
+      friendRequests.outgoing = []
+      friendRequests.pendingCount = 0
+      return
+    }
+    const nextIncoming = []
+    const nextOutgoing = []
+    list.forEach((item, index) => {
+      if (!item) return
+      const direction = Number(item.applyDirection)
+      const baseId = item.id ?? item.requestId
+      const fallbackId = `${direction || 0}-${item.userId ?? 'unknown'}-${item.createTime ?? index}`
+      const statusValue = Number(item.requestStatus)
+      const requestStatus = Number.isFinite(statusValue) ? statusValue : 0
+      const record = {
+        id: baseId ?? fallbackId,
+        userId: item.userId ?? null,
+        nickname: item.nickname ?? '',
+        applyMessage: item.applyMessage ?? '',
+        timeHint: formatTimeHint(item.createTime),
+        avatar: item.avatarFullUrl ?? '',
+        applyDirection: direction || 0,
+        requestStatus,
+      }
+      if (direction === 1) {
+        nextOutgoing.push(record)
+      } else {
+        nextIncoming.push(record)
+      }
+    })
+    friendRequests.incoming = nextIncoming
+    friendRequests.outgoing = nextOutgoing
+    friendRequests.pendingCount = pendingCount
+  } catch (error) {
+    console.error('加载好友申请失败', error)
+    friendRequests.incoming = []
+    friendRequests.outgoing = []
+    friendRequests.pendingCount = 0
+  }
+}
+
 const toolbarActions = [
   { id: 'conversations', icon: '💬', label: '会话' },
-  { id: 'contacts', icon: '👥', label: '联系人' },
+  { id: 'contacts', icon: '👥', label: '通讯录' },
   { id: 'settings', icon: '⚙️', label: '设置' },
 ]
 
@@ -534,7 +644,7 @@ const toolsRef = ref(null)
 const showAddFriendModal = ref(false)
 
 const searchPlaceholder = computed(() =>
-  activeToolbar.value === 'contacts' ? 'Search friends...' : 'Search conversations...',
+  activeToolbar.value === 'contacts' ? '搜索通讯录...' : 'Search conversations...',
 )
 
 const filteredConversations = computed(() => {
@@ -603,8 +713,11 @@ const selectToolbarAction = (id) => {
   if (id !== 'contacts') {
     showFriendModal.value = false
   }
-  if (id === 'contacts' && !activeFriendId.value && filteredContacts.value.length) {
-    activeFriendId.value = filteredContacts.value[0].id
+  if (id === 'contacts') {
+    if (!activeFriendId.value && filteredContacts.value.length) {
+      activeFriendId.value = filteredContacts.value[0].id
+    }
+    loadFriendRequests()
   }
 }
 
@@ -623,6 +736,129 @@ const closeFriendModal = () => {
 
 const closeAddFriendModal = () => {
   showAddFriendModal.value = false
+}
+
+const isProcessingFriendRequest = ref(false)
+const showApproveRemarkModal = ref(false)
+const remarkDraft = ref('')
+const pendingApproveRequest = ref(null)
+
+const pendingApproveName = computed(() =>
+  getRequestDisplayName(pendingApproveRequest.value),
+)
+
+const handleApproveFriendRequest = (request) => {
+  if (!request?.id || isProcessingFriendRequest.value) return
+  pendingApproveRequest.value = request
+  remarkDraft.value = request.nickname ?? ''
+  showApproveRemarkModal.value = true
+}
+
+const closeApproveRemarkModal = () => {
+  if (isProcessingFriendRequest.value) return
+  showApproveRemarkModal.value = false
+  pendingApproveRequest.value = null
+  remarkDraft.value = ''
+}
+
+const updateRemarkDraft = (value) => {
+  remarkDraft.value = value
+}
+
+const confirmApproveFriendRequest = async () => {
+  const request = pendingApproveRequest.value
+  if (!request?.id || isProcessingFriendRequest.value) return
+  let friendId = request.userId ?? null
+  if (friendId === null || friendId === undefined) {
+    alert('未找到好友信息，无法同意申请')
+    return
+  }
+  const numericFriendId = Number(friendId)
+  if (!Number.isNaN(numericFriendId)) {
+    friendId = numericFriendId
+  }
+  const remark = remarkDraft.value.trim()
+  isProcessingFriendRequest.value = true
+  try {
+    const { data, message } = await apiClient.post(
+      '/friend/agreeFriendRequest',
+      {
+        friendId,
+        remark,
+      },
+    )
+    const target = friendRequests.incoming.find(
+      (item) => item.id === request.id,
+    )
+    if (target) {
+      target.requestStatus = 1
+    }
+    friendRequests.pendingCount = Math.max(
+      0,
+      friendRequests.pendingCount - 1,
+    )
+    showApproveRemarkModal.value = false
+    pendingApproveRequest.value = null
+    remarkDraft.value = ''
+    alert(
+      (typeof data === 'string' && data) ||
+        message ||
+        `已同意 ${getRequestDisplayName(request)} 的好友申请。`,
+    )
+    loadFriendRequests()
+  } catch (error) {
+    alert(error?.message || '同意好友申请失败，请稍后重试')
+  } finally {
+    isProcessingFriendRequest.value = false
+  }
+}
+
+const handleRejectFriendRequest = async (request) => {
+  if (!request?.id || isProcessingFriendRequest.value) return
+  let friendId = request.userId ?? null
+  if (friendId === null || friendId === undefined) {
+    alert('未找到好友信息，无法拒绝申请')
+    return
+  }
+  const numericFriendId = Number(friendId)
+  if (!Number.isNaN(numericFriendId)) {
+    friendId = numericFriendId
+  }
+  const confirmed = window.confirm(
+    `确定要拒绝 ${getRequestDisplayName(request)} 的好友申请吗？`,
+  )
+  if (!confirmed) return
+  isProcessingFriendRequest.value = true
+  try {
+    const { data, message } = await apiClient.post(
+      '/friend/rejectFriendRequest',
+      { param: friendId },
+    )
+    const target = friendRequests.incoming.find(
+      (item) => item.id === request.id,
+    )
+    if (target) {
+      target.requestStatus = 2
+    }
+    friendRequests.pendingCount = Math.max(
+      0,
+      friendRequests.pendingCount - 1,
+    )
+    alert(
+      (typeof data === 'string' && data) ||
+        message ||
+        `已拒绝 ${getRequestDisplayName(request)} 的好友申请。`,
+    )
+    loadFriendRequests()
+  } catch (error) {
+    alert(error?.message || '拒绝好友申请失败，请稍后重试')
+  } finally {
+    isProcessingFriendRequest.value = false
+  }
+}
+
+const handleFriendAdded = () => {
+  loadFriendRequests()
 }
 
 const handleSendMessageToFriend = () => {
@@ -680,6 +916,7 @@ onBeforeUnmount(() => {
 })
 
 let currentUser = reactive({
+  id: null,
   email: '',
   nickname: '',
   avatarFullUrl: '',
@@ -689,6 +926,7 @@ const getUserInfo = async () => {
 
     const { data } = await apiClient.get('/user/getUserInfo')
     if (data){
+        currentUser.id = data.id ?? null
         currentUser.email = data.email
         currentUser.nickname = data.nickname
         currentUser.avatarFullUrl = data.avatarFullUrl
@@ -697,6 +935,7 @@ const getUserInfo = async () => {
 }
 
 getUserInfo()
+loadFriendRequests()
 
 </script>
 
