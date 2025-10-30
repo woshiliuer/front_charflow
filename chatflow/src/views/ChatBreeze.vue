@@ -77,7 +77,6 @@
         :activeItem="activeItem"
         @select="handleSelect"
       />
-
       <!-- 拖拽以调整宽度 -->
       <div
         class="resize-handle"
@@ -87,6 +86,7 @@
     </aside>
 
     <ConversationArea
+      v-if="activeToolbar === 'conversations'"
       :highlights="highlights"
       :selected-conversation="selectedConversation"
       :selected-thread="selectedThread"
@@ -95,75 +95,13 @@
       @update:draft="(v) => (draft = v)"
       @send="() => {}"
     />
-    <transition name="friend-modal-fade">
-      <div
-        v-if="showFriendModal && selectedFriend"
-        class="friend-modal-overlay"
-        @click.self="closeFriendModal"
-      >
-        <div class="friend-modal-card">
-          <button
-            type="button"
-            class="friend-modal-close"
-            aria-label="关闭好友详情"
-            @click="closeFriendModal"
-          >
-            &times;
-          </button>
-          <div class="friend-modal-header">
-            <div class="friend-modal-avatar">
-              <img
-                :src="selectedFriend.avatar"
-                :alt="selectedFriend.nickname || selectedFriend.nameEn"
-              />
-              <span
-                v-if="selectedFriend.status"
-                :class="['friend-status', selectedFriend.status]"
-              />
-            </div>
-            <div class="friend-modal-title">
-              <h3>{{ selectedFriend.nickname || selectedFriend.nameEn }}</h3>
-              <p class="friend-modal-subtitle">
-                {{ selectedFriend.nameEn }}
-                <span v-if="selectedFriend.nameCn"> · {{ selectedFriend.nameCn }}</span>
-              </p>
-              <p class="friend-modal-remark">
-                {{ selectedFriend.remark || '暂无备注' }}
-              </p>
-            </div>
-          </div>
-          <div class="friend-modal-body">
-            <dl>
-              <div class="friend-modal-row">
-                <dt>备注</dt>
-                <dd>{{ selectedFriend.remark || '暂无备注' }}</dd>
-              </div>
-              <div class="friend-modal-row">
-                <dt>昵称</dt>
-                <dd>{{ selectedFriend.nickname || selectedFriend.nameEn }}</dd>
-              </div>
-              <div class="friend-modal-row">
-                <dt>邮箱</dt>
-                <dd>{{ selectedFriend.email || '未提供邮箱' }}</dd>
-              </div>
-              <div class="friend-modal-row">
-                <dt>个性签名</dt>
-                <dd>{{ selectedFriend.signature || '这位朋友还没有写签名' }}</dd>
-              </div>
-            </dl>
-          </div>
-          <div class="friend-modal-actions">
-            <button
-              type="button"
-              class="friend-modal-action"
-              @click="handleSendMessageToFriend"
-            >
-              发消息
-            </button>
-          </div>
-        </div>
-      </div>
-    </transition>
+
+    <FriendDetailModal
+      :visible="showFriendModal"
+      :friend="selectedFriend"
+      @close="closeFriendModal"
+      @send="handleSendMessageToFriend"
+    />
     <AddFriendModal
       :visible="showAddFriendModal"
       :current-user-id="currentUser.id"
@@ -197,6 +135,7 @@ import ContactsDirectory from '@/components/chat/ContactsDirectory.vue'
 import MessageList from '@/components/chat/MessageList.vue'
 import AddFriendModal from '@/components/chat/AddFriendModal.vue'
 import FriendRemarkModal from '@/components/chat/FriendRemarkModal.vue'
+import FriendDetailModal from '@/components/chat/FriendDetailModal.vue'
 import RejectFriendModal from '@/components/chat/RejectFriendModal.vue'
 import { apiClient } from '@/services/apiClient'
 import SettingsPanel from '@/components/settings/SettingsPanel.vue'
@@ -466,7 +405,7 @@ const settingsItems = [
   },
   {
     id: 'notifications',
-    title: '通知偏好'
+    title: '通知'
   },
 ]
 
@@ -1163,215 +1102,12 @@ loadFriendRequests()
 .resize-handle.active::after {
   background: rgba(60, 196, 125, 0.5);
 }
-
-.friend-modal-fade-enter-active,
-.friend-modal-fade-leave-active {
-  transition: opacity 0.24s ease;
-}
-
-.friend-modal-fade-enter-from,
-.friend-modal-fade-leave-to {
-  opacity: 0;
-}
-
-.friend-modal-overlay {
-  position: fixed;
-  inset: 0;
-  background: rgba(15, 40, 27, 0.48);
-  backdrop-filter: blur(8px);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 32px 24px;
-  z-index: 1200;
-}
-
-.friend-modal-card {
-  width: 420px;
-  max-width: 100%;
-  background: linear-gradient(150deg, rgba(255, 255, 255, 0.98), rgba(221, 239, 228, 0.94));
-  border-radius: 24px;
-  box-shadow: 0 28px 50px rgba(31, 53, 38, 0.26);
-  padding: 32px 34px;
-  color: #1f3526;
-  position: relative;
-}
-
-.friend-modal-close {
-  position: absolute;
-  top: 18px;
-  right: 20px;
-  width: 34px;
-  height: 34px;
-  border-radius: 50%;
-  border: none;
-  background: rgba(255, 255, 255, 0.86);
-  color: #2a4c38;
-  font-size: 20px;
-  line-height: 1;
-  cursor: pointer;
-  box-shadow: 0 6px 16px rgba(31, 53, 38, 0.16);
-  transition: transform 0.2s ease, box-shadow 0.2s ease;
-}
-
-.friend-modal-close:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 10px 22px rgba(31, 53, 38, 0.22);
-}
-
-.friend-modal-header {
-  display: flex;
-  align-items: center;
-  gap: 18px;
-  margin-bottom: 24px;
-}
-
-.friend-modal-avatar {
-  width: 82px;
-  height: 82px;
-  border-radius: 24px;
-  overflow: hidden;
-  position: relative;
-  flex-shrink: 0;
-  box-shadow: 0 16px 32px rgba(36, 75, 52, 0.22);
-}
-
-.friend-modal-avatar img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  display: block;
-}
-
-.friend-status {
-  position: absolute;
-  bottom: 10px;
-  right: 10px;
-  width: 14px;
-  height: 14px;
-  border-radius: 50%;
-  border: 3px solid rgba(255, 255, 255, 0.92);
-}
-
-.friend-status.online {
-  background: #31c374;
-}
-
-.friend-status.away {
-  background: #f7b84d;
-}
-
-.friend-status.offline {
-  background: #bcc5c0;
-}
-
-.friend-modal-title h3 {
-  margin: 0;
-  font-size: 22px;
-  font-weight: 700;
-}
-
-.friend-modal-subtitle {
-  margin: 6px 0 0;
-  font-size: 14px;
-  color: #58725f;
-}
-
-.friend-modal-remark {
-  margin: 10px 0 0;
-  font-size: 14px;
-  color: #1f3526;
-  font-weight: 500;
-}
-
-.friend-modal-body {
-  padding-top: 18px;
-  border-top: 1px solid rgba(198, 221, 207, 0.6);
-}
-
-.friend-modal-body dl {
-  margin: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
-.friend-modal-row {
-  display: flex;
-  gap: 12px;
-}
-
-.friend-modal-row dt {
-  width: 72px;
-  font-size: 13px;
-  color: #6b8574;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  line-height: 1.5;
-  flex-shrink: 0;
-}
-
-.friend-modal-row dd {
-  margin: 0;
-  font-size: 15px;
-  color: #264736;
-  line-height: 1.6;
-}
-
-.friend-modal-row:last-child dd {
-  font-style: italic;
-  color: #395848;
-}
-
-.friend-modal-actions {
-  margin-top: 28px;
-  display: flex;
-  justify-content: center;
-}
-
-.friend-modal-action {
-  border: none;
-  border-radius: 16px;
-  padding: 12px 24px;
-  background: linear-gradient(135deg, #32c374, #1da368);
-  color: #ffffff;
-  font-size: 14px;
-  font-weight: 600;
-  cursor: pointer;
-  box-shadow: 0 16px 26px rgba(45, 176, 103, 0.28);
-  transition: transform 0.18s ease, box-shadow 0.18s ease;
-}
-
-.friend-modal-action:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 20px 32px rgba(45, 176, 103, 0.34);
-}
-
-.sidebar-placeholder {
-  flex: 1;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 24px;
-  border-radius: 18px;
-  background: rgba(255, 255, 255, 0.6);
-  color: #58725f;
-  font-size: 14px;
-  text-align: center;
-  box-shadow: inset 0 0 0 1px rgba(198, 221, 207, 0.4);
-}
-
-@media (max-width: 1024px) {
-  .sidebar {
-    padding: 24px;
-  }
-
   .sidebar-toolbar {
     width: 64px;
     padding: 24px 0;
   }
 
-}
+
 
 @media (max-width: 768px) {
   .chat-breeze {
@@ -1393,17 +1129,15 @@ loadFriendRequests()
 
   .resize-handle {
     display: none;
-  }
-
-  .friend-modal-overlay {
-    align-items: flex-end;
-    padding: 24px 16px;
-  }
-
-  .friend-modal-card {
-    width: 100%;
-    padding: 24px 22px 28px;
-    border-radius: 20px;
-  }
-}
+  }}
 </style>
+
+
+
+
+
+
+
+
+
+
