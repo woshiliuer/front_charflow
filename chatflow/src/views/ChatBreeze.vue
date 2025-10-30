@@ -57,7 +57,7 @@
       </div>
     </header>
 
-      <div class="search">
+      <!-- <div class="search">
         <input
           type="text"
           :placeholder="searchPlaceholder"
@@ -67,7 +67,7 @@
           <span aria-hidden="true">🔍</span>
           <span class="sr-only">Search</span>
         </button>
-      </div>
+      </div> -->
 
       <ul
         v-if="activeToolbar === 'conversations'"
@@ -109,9 +109,13 @@
       @approve-request="handleApproveFriendRequest"
       @reject-request="handleRejectFriendRequest"
     />
-      <div v-else class="sidebar-placeholder">
-        <p>Settings will be available soon.</p>
-      </div>
+
+      <SettingsPanel v-else 
+        :items="settingsItems"
+        :activeItem="activeItem"
+        @select="handleSelect"
+      />
+
 
       <div
         class="resize-handle"
@@ -283,6 +287,7 @@ import AddFriendModal from '@/components/chat/AddFriendModal.vue'
 import FriendRemarkModal from '@/components/chat/FriendRemarkModal.vue'
 import RejectFriendModal from '@/components/chat/RejectFriendModal.vue'
 import { apiClient } from '@/services/apiClient'
+import SettingsPanel from '@/components/settings/SettingsPanel.vue'
 const conversations = [
   {
     id: 1,
@@ -536,6 +541,29 @@ const toolbarActions = [
   { id: 'contacts', icon: '👥', label: '通讯录' },
   { id: 'settings', icon: '⚙️', label: '设置' },
 ]
+
+const settingsItems = [
+  {
+    id: 'profile',
+    title: '个人资料'
+  },
+  {
+    id: 'account',
+    title: '账户安全'
+  },
+  {
+    id: 'notifications',
+    title: '通知设置'
+  },
+]
+
+const activeItem = ref('profile')
+
+const handleSelect = (id) => {
+  activeItem.value = id
+  console.log('选中项目：', id)
+}
+
 
 const threads = {
   "1": [
@@ -1187,7 +1215,7 @@ loadFriendRequests()
   border: 0;
 }
 
-.search {
+/* .search {
   display: flex;
   gap: 12px;
   align-items: center;
@@ -1228,7 +1256,7 @@ loadFriendRequests()
 .search button:hover {
   transform: translateY(-2px);
   box-shadow: 0 10px 20px rgba(46, 163, 101, 0.25);
-}
+} */
 
 .conversation-list {
   list-style: none;

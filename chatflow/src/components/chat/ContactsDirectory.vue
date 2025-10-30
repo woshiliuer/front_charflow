@@ -1,5 +1,18 @@
 <template>
   <div class="contacts-directory">
+      <div class="search">
+        <input
+          type="text"
+          :placeholder="searchPlaceholder"
+          v-model="searchTerm"
+        />
+        <button title="搜索">
+          <span aria-hidden="true">🔍</span>
+          <span class="sr-only">Search</span>
+        </button>
+      </div>
+
+
     <section class="directory-section">
       <button
         type="button"
@@ -700,5 +713,61 @@ const isPending = (item) => getRequestStatus(item) === 0
   max-height: 640px;
   opacity: 1;
   transform: translateY(0);
+}
+
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.search {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  padding: 0 2px;
+}
+
+.search input {
+  flex: 1;
+  border: 1px solid #dbeadf;
+  border-radius: 16px;
+  padding: 12px 16px;
+  font-size: 14px;
+  background: rgba(243, 250, 245, 0.9);
+  transition: border 0.2s ease, box-shadow 0.2s ease;
+}
+
+.search input:focus {
+  outline: none;
+  border-color: #3cc47d;
+  box-shadow: 0 0 0 3px rgba(60, 196, 125, 0.2);
+}
+
+.search button {
+  width: 42px;
+  height: 42px;
+  border-radius: 14px;
+  border: none;
+  background: linear-gradient(135deg, #3cc47d, #2ea365);
+  color: #ffffff;
+  cursor: pointer;
+  font-size: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.search button:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 10px 20px rgba(46, 163, 101, 0.25);
 }
 </style>
