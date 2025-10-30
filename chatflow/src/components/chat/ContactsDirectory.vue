@@ -139,7 +139,7 @@
         <span class="folder-icon" aria-hidden="true">🗂️</span>
         <span class="folder-title">我的好友</span>
         <span class="folder-meta">
-          {{ friends.length ? `${friends.length} 位联系人` : '暂未添加好友' }}
+          {{ friendCount ? `${friendCount} 位联系人` : '暂未添加好友' }}
         </span>
         <span class="folder-arrow" aria-hidden="true">
           {{ expandedSections.friends ? '▾' : '▸' }}
@@ -147,7 +147,28 @@
       </button>
       <transition name="directory-collapse">
         <div v-if="expandedSections.friends" class="folder-content">
+          <div v-if="isLoadingFriends" class="empty-hint">
+            <span aria-hidden="true">⏳</span>
+            <p>好友列表加载中，请稍候...</p>
+          </div>
+          <div v-else-if="friendsError" class="empty-hint">
+            <span aria-hidden="true">⚠️</span>
+            <p>{{ friendsError }}</p>
+            <button
+              type="button"
+              class="hint-action"
+              :disabled="isLoadingFriends"
+              @click="retryLoadFriends"
+            >
+              重新加载
+            </button>
+          </div>
+          <div v-else-if="!friends.length" class="empty-hint">
+            <span aria-hidden="true">🤝</span>
+            <p>还没有好友，快去添加吧！</p>
+          </div>
           <ChatFriendsList
+            v-else
             :friends="friends"
             :active-friend-id="activeFriendId"
             @select="emit('select-friend', $event)"
@@ -182,8 +203,9 @@
 </template>
 
 <script setup>
-import { computed, reactive } from 'vue'
+import { computed, reactive, ref, onMounted } from 'vue'
 import ChatFriendsList from './ChatFriendsList.vue'
+import { apiClient } from '@/services/apiClient'
 
 const props = defineProps({
   friendRequests: {
@@ -215,6 +237,23 @@ const expandedSections = reactive({
   groups: false,
 })
 
+const loadedFriends = ref(null)
+const isLoadingFriends = ref(false)
+const friendsError = ref('')
+
+const friendsFromProps = computed(() =>
+  Array.isArray(props.friends) ? props.friends : [],
+)
+
+const friends = computed(() => {
+  if (loadedFriends.value !== null) {
+    return loadedFriends.value
+  }
+  return friendsFromProps.value
+})
+
+const friendCount = computed(() => friends.value.length)
+
 const incomingRequests = computed(
   () => props.friendRequests?.incoming ?? [],
 )
@@ -232,6 +271,76 @@ const totalRequestCount = computed(
     return incomingRequests.value.filter(isPending).length
   },
 )
+
+const mapFriendStatus = (status) => {
+  if (typeof status === 'string') {
+    const normalized = status.trim().toLowerCase()
+    if (normalized === 'online') return 'online'
+    if (normalized === 'offline') return 'offline'
+    return normalized
+  }
+  const value = Number(status)
+  if (Number.isNaN(value)) return 'offline'
+  if (value === 1) return 'online'
+  if (value === 2) return 'offline'
+  return 'offline'
+}
+
+const normalizeFriend = (item = {}, index) => {
+  const id =
+    item.id ??
+    item.friendId ??
+    item.userId ??
+    item.targetId ??
+    `friend-${index}`
+  const displayName =
+    item.remark ??
+    item.nickname ??
+    item.name ??
+    item.username ??
+    `好友 ${index + 1}`
+  return {
+    ...item,
+    id,
+    avatar:
+      item.avatarFullUrl ??
+      item.avatarUrl ??
+      item.avatar ??
+      '',
+    nameEn: displayName,
+    nameCn: item.nameCn ?? '',
+    description: item.description ?? item.signature ?? '',
+    lastActive: item.lastActive ?? '',
+    status: mapFriendStatus(item.status),
+  }
+}
+
+const loadFriends = async ({ force = false } = {}) => {
+  if (isLoadingFriends.value) return
+  if (!force && loadedFriends.value !== null) return
+  friendsError.value = ''
+  isLoadingFriends.value = true
+  try {
+    const { data } = await apiClient.post('/friend/getFriends', {})
+    const list = Array.isArray(data) ? data : []
+    loadedFriends.value = list.map((item, index) => normalizeFriend(item, index))
+  } catch (error) {
+    friendsError.value = error?.message || '好友列表获取失败，请稍后重试'
+    if (force && loadedFriends.value === null) {
+      loadedFriends.value = null
+    }
+  } finally {
+    isLoadingFriends.value = false
+  }
+}
+
+const retryLoadFriends = () => {
+  loadFriends({ force: true })
+}
+
+onMounted(() => {
+  loadFriends()
+})
 
 const toggleSection = (section) => {
   expandedSections[section] = !expandedSections[section]
@@ -546,6 +655,32 @@ const isPending = (item) => getRequestStatus(item) === 0
 
 .empty-hint span {
   font-size: 20px;
+}
+
+.hint-action {
+  margin-top: 12px;
+  border: none;
+  border-radius: 999px;
+  padding: 8px 18px;
+  background: linear-gradient(135deg, #32c374, #1da368);
+  color: #ffffff;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  box-shadow: 0 8px 20px rgba(45, 176, 103, 0.2);
+  transition: transform 0.18s ease, box-shadow 0.18s ease, opacity 0.18s ease;
+}
+
+.hint-action:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 12px 24px rgba(45, 176, 103, 0.26);
+}
+
+.hint-action:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
 }
 
 .directory-collapse-enter-active,
