@@ -1,8 +1,5 @@
 <template>
   <div class="settings-panel">
-    <header class="settings-panel__header">
-      <h2>设置</h2>
-    </header>
     <ul class="settings-panel__list">
       <li v-for="item in items" :key="item.id">
         <button

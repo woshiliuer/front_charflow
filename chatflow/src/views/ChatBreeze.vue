@@ -20,95 +20,57 @@
     </aside>
 
     <aside class="sidebar" :style="{ width: sidebarWidth + 'px' }">
-    <header class="sidebar-header">
-      <h1>Messages 消息</h1>
-      <div class="tools" ref="toolsRef">
-        <button class="tool-button" type="button" title="设置">
-          <span aria-hidden="true">⚙️</span>
-          <span class="sr-only">Settings</span>
-        </button>
-        <div class="tool-create">
-          <button
-            class="tool-button"
-            type="button"
-            title="新建会话"
-            @click.stop="toggleCreateMenu"
-          >
-            <span aria-hidden="true">+</span>
-            <span class="sr-only">Create</span>
-          </button>
-          <transition name="tool-menu-fade">
-            <ul v-if="showCreateMenu" class="tool-menu">
-              <li>
-                <button type="button" @click="handleStartGroup">
-                  <span class="tool-menu-icon">👥</span>
-                  <span>发起群聊</span>
-                </button>
-              </li>
-              <li>
-                <button type="button" @click="handleAddFriend">
-                  <span class="tool-menu-icon">🌱</span>
-                  <span>添加好友</span>
-                </button>
-              </li>
-            </ul>
-          </transition>
+      <header class="sidebar-header">
+        <h1 v-if="activeToolbar === 'conversations'">消息</h1>
+        <h1 v-else-if="activeToolbar === 'contacts'">通讯录</h1>
+        <h1 v-else>设置</h1>
+        <div v-if="activeToolbar === 'conversations'" class="tools" ref="toolsRef">
+          <div class="tool-create">
+            <button
+              class="tool-button"
+              type="button"
+              title="新建会话"
+              @click.stop="toggleCreateMenu"
+            >
+              <span aria-hidden="true">+</span>
+              <span class="sr-only">Create</span>
+            </button>
+            <transition name="tool-menu-fade">
+              <ul v-if="showCreateMenu" class="tool-menu">
+                <li>
+                  <button type="button" @click="handleStartGroup">
+                    <span class="tool-menu-icon">👥</span>
+                    <span>创建群聊</span>
+                  </button>
+                </li>
+                <li>
+                  <button type="button" @click="handleAddFriend">
+                    <span class="tool-menu-icon">➕</span>
+                    <span>添加好友</span>
+                  </button>
+                </li>
+              </ul>
+            </transition>
+          </div>
         </div>
-      </div>
-    </header>
+      </header>
 
-      <!-- <div class="search">
-        <input
-          type="text"
-          :placeholder="searchPlaceholder"
-          v-model="searchTerm"
-        />
-        <button title="搜索">
-          <span aria-hidden="true">🔍</span>
-          <span class="sr-only">Search</span>
-        </button>
-      </div> -->
-
-      <ul
+      <MessageList
         v-if="activeToolbar === 'conversations'"
-        class="conversation-list"
-      >
-        <li
-          v-for="item in filteredConversations"
-          :key="item.id"
-          :class="{ active: item.id === activeConversationId }"
-          @click="selectConversation(item.id)"
-        >
-          <div class="avatar">
-            <img :src="item.avatar" :alt="item.nameEn" />
-            <span :class="['status', item.status]" />
-          </div>
-
-          <div class="info">
-            <div class="row">
-              <div class="name-block">
-                <strong>{{ item.nameEn }}</strong>
-              </div>
-            </div>
-            <p>{{ item.snippet }}</p>
-          </div>
-
-          <div class="meta">
-            <span class="time"> {{ item.clock }}</span>
-            <span v-if="item.unread" class="badge">{{ item.unread }}</span>
-          </div>
-        </li>
-      </ul>
-    <ContactsDirectory
-      v-else-if="activeToolbar === 'contacts'"
-      :friend-requests="friendRequests"
-      :friends="filteredContacts"
-      :active-friend-id="activeFriendId"
-      :pending-count="friendRequests.pendingCount"
-      @select-friend="selectFriend"
-      @approve-request="handleApproveFriendRequest"
-      @reject-request="handleRejectFriendRequest"
-    />
+        :conversations="filteredConversations"
+        :active-conversation-id="activeConversationId"
+        @select="selectConversation"
+      />
+      <ContactsDirectory
+        v-else-if="activeToolbar === 'contacts'"
+        :friend-requests="friendRequests"
+        :friends="filteredContacts"
+        :active-friend-id="activeFriendId"
+        :pending-count="friendRequests.pendingCount"
+        @select-friend="selectFriend"
+        @approve-request="handleApproveFriendRequest"
+        @reject-request="handleRejectFriendRequest"
+      />
 
       <SettingsPanel v-else 
         :items="settingsItems"
@@ -116,7 +78,7 @@
         @select="handleSelect"
       />
 
-
+      <!-- 拖拽以调整宽度 -->
       <div
         class="resize-handle"
         :class="{ active: isResizing }"
@@ -124,66 +86,15 @@
       />
     </aside>
 
-    <section class="welcome">
-      <header class="highlight-bar">
-        <div v-for="item in highlights" :key="item.id" class="highlight">
-          <img :src="item.avatar" :alt="item.name" />
-          <span>{{ item.name }}</span>
-        </div>
-
-          
-      </header>
-
-   
-      <div class="divider"></div>
-
-    <main v-if="!selectedConversation" class="empty-state">
-      <div class="icon">💬</div>
-      <h2>Welcome to Messages 欢迎浏览留言</h2>
-      <p>
-        Select a conversation from the sidebar to start chatting with your contacts.<br />
-        从侧边栏中选择一个对话，开始与联系人聊天。
-      </p>
-
-      <ul class="features">
-        <li><span>🔒</span> End-to-end encrypted 端到端加密</li>
-        <li><span>⚡</span> Real-time sync 实时同步</li>
-        <li><span>📊</span> Insights 精准洞察</li>
-      </ul>
-    </main>
-
-      <section v-else class="conversation-view">
-        <header>
-          <div class="title">
-            <h2>{{ selectedConversation.displayName }}</h2>
-          </div>
-        </header>
-
-        <ul class="message-list">
-          <li
-            v-for="message in selectedThread"
-            :key="message.id"
-            :class="['message', message.role]"
-          >
-            <div class="message-avatar">
-              <img
-                :src="message.role === 'self' ? currentUser.avatarFullUrl : selectedConversation.avatar"
-                :alt="message.role === 'self' ? currentUser.nickname : message.author"
-              />
-            </div>
-            <div class="bubble">
-              <p>{{ message.text }}</p>
-
-            </div>
-          </li>
-        </ul>
-
-      <footer class="composer">
-        <input type="text" placeholder="输入消息..." v-model="draft" />
-        <button type="button">发送</button>
-      </footer>
-      </section>
-    </section>
+    <ConversationArea
+      :highlights="highlights"
+      :selected-conversation="selectedConversation"
+      :selected-thread="selectedThread"
+      :current-user="currentUser"
+      :draft="draft"
+      @update:draft="(v) => (draft = v)"
+      @send="() => {}"
+    />
     <transition name="friend-modal-fade">
       <div
         v-if="showFriendModal && selectedFriend"
@@ -237,7 +148,7 @@
               </div>
               <div class="friend-modal-row">
                 <dt>个性签名</dt>
-                <dd>{{ selectedFriend.signature || '这位好友还没有写签名' }}</dd>
+                <dd>{{ selectedFriend.signature || '这位朋友还没有写签名' }}</dd>
               </div>
             </dl>
           </div>
@@ -283,19 +194,21 @@
 <script setup>
 import { ref, computed, onMounted, onBeforeUnmount, reactive } from 'vue'
 import ContactsDirectory from '@/components/chat/ContactsDirectory.vue'
+import MessageList from '@/components/chat/MessageList.vue'
 import AddFriendModal from '@/components/chat/AddFriendModal.vue'
 import FriendRemarkModal from '@/components/chat/FriendRemarkModal.vue'
 import RejectFriendModal from '@/components/chat/RejectFriendModal.vue'
 import { apiClient } from '@/services/apiClient'
 import SettingsPanel from '@/components/settings/SettingsPanel.vue'
+import ConversationArea from '@/components/chat/ConversationArea.vue'
 const conversations = [
   {
     id: 1,
     nameEn: 'Sarah Johnson',
     nameCn: '莎拉·约翰逊',
-    period: '下午',
+    period: '今天',
     clock: '2:30',
-    snippet: '嘿！你今天过得怎么样？',
+    snippet: '嗨，今天那件事你那边怎么处理？',
     unread: 3,
     status: 'online',
     avatar: 'https://randomuser.me/api/portraits/women/9.jpg',
@@ -304,9 +217,9 @@ const conversations = [
     id: 2,
     nameEn: 'Design Team',
     nameCn: '设计团队',
-    period: '下午',
+    period: '今天',
     clock: '1:45',
-    snippet: '[图片] 新的 banner 请确认',
+    snippet: '[图片] 新的 banner 待确认',
     unread: 12,
     status: 'online',
     avatar: 'https://images.unsplash.com/photo-1521737604893-d14cc237f11d?auto=format&fit=crop&w=120&q=80',
@@ -315,9 +228,9 @@ const conversations = [
     id: 3,
     nameEn: 'Mike Chen',
     nameCn: '麦克·陈',
-    period: '中午',
+    period: '今天',
     clock: '12:20',
-    snippet: '[语音消息] 语音留言待听',
+    snippet: '[语音信息] 刚刚那段录了',
     unread: 0,
     status: 'away',
     avatar: 'https://randomuser.me/api/portraits/men/32.jpg',
@@ -326,9 +239,9 @@ const conversations = [
     id: 4,
     nameEn: 'Project Alpha',
     nameCn: '项目A',
-    period: '上午',
+    period: '今天',
     clock: '11:30',
-    snippet: '会议下午 3 点开始',
+    snippet: '同步会下午 3 点开始',
     unread: 5,
     status: 'online',
     avatar: 'https://images.unsplash.com/photo-1522196772883-393d879eb14d?auto=format&fit=crop&w=120&q=80',
@@ -337,9 +250,9 @@ const conversations = [
     id: 5,
     nameEn: 'Emma Wilson',
     nameCn: '艾玛·威尔逊',
-    period: '上午',
+    period: '今天',
     clock: '10:15',
-    snippet: '[文件] PRD 初稿在附件',
+    snippet: '[文件] PRD 已更新',
     unread: 0,
     status: 'offline',
     avatar: 'https://randomuser.me/api/portraits/women/17.jpg',
@@ -347,10 +260,10 @@ const conversations = [
   {
     id: 6,
     nameEn: 'Development Team',
-    nameCn: '研发团队',
+    nameCn: '开发团队',
     period: '昨天',
     clock: '20:05',
-    snippet: '缺陷修复已经部署',
+    snippet: '缺陷修复已完成',
     unread: 0,
     status: 'online',
     avatar: 'https://images.unsplash.com/photo-1454165205744-3b78555e5572?auto=format&fit=crop&w=120&q=80',
@@ -360,17 +273,17 @@ const conversations = [
 const highlights = [
   {
     id: 1,
-    name: 'Sarah 鑾庢媺',
+    name: 'Sarah 莎拉',
     avatar: 'https://randomuser.me/api/portraits/women/9.jpg',
   },
   {
     id: 3,
-    name: 'Mike 楹﹀厠',
+    name: 'Mike 麦克',
     avatar: 'https://randomuser.me/api/portraits/men/32.jpg',
   },
   {
     id: 5,
-    name: 'Emma 鑹剧帥',
+    name: 'Emma 艾玛',
     avatar: 'https://randomuser.me/api/portraits/women/17.jpg',
   },
 ]
@@ -386,7 +299,7 @@ const contacts = [
     lastActive: 'Online',
     nickname: 'Ava',
     email: 'ava.thompson@example.com',
-    remark: 'Roadmap 协作伙伴',
+    remark: 'Roadmap 协作负责人',
     signature: 'Keep shipping delightful experiences.',
   },
   {
@@ -399,7 +312,7 @@ const contacts = [
     lastActive: '2 min ago',
     nickname: 'Jay',
     email: 'jason.lee@example.com',
-    remark: '设计反馈第一联系人',
+    remark: '可就产品再约下次访谈',
     signature: 'Design is thinking made visual.',
   },
   {
@@ -425,7 +338,7 @@ const contacts = [
     lastActive: '1 hr ago',
     nickname: 'Noah G.',
     email: 'noah.garcia@example.com',
-    remark: '后端联调负责人',
+    remark: '后端服务对接',
     signature: 'APIs with a touch of espresso.',
   },
   {
@@ -438,7 +351,7 @@ const contacts = [
     lastActive: 'Online',
     nickname: 'Sofi',
     email: 'sofia.rossi@example.com',
-    remark: 'Campaign 同步窗口',
+    remark: 'Campaign 同步推进',
     signature: 'Stories that connect hearts.',
   },
 ]
@@ -450,12 +363,12 @@ const friendRequests = reactive({
 })
 
 const getRequestDisplayName = (request) => {
-  if (!request) return '这位用户'
+  if (!request) return '未知用户'
   if (request.nickname) return request.nickname
   if (request.userId !== undefined && request.userId !== null) {
     return `用户 #${request.userId}`
   }
-  return '这位用户'
+  return '未知用户'
 }
 
 const formatTimeHint = (timestamp) => {
@@ -529,7 +442,7 @@ const loadFriendRequests = async () => {
     friendRequests.outgoing = nextOutgoing
     friendRequests.pendingCount = pendingCount
   } catch (error) {
-    console.error('加载好友申请失败', error)
+    console.error('加载好友请求失败', error)
     friendRequests.incoming = []
     friendRequests.outgoing = []
     friendRequests.pendingCount = 0
@@ -538,7 +451,7 @@ const loadFriendRequests = async () => {
 
 const toolbarActions = [
   { id: 'conversations', icon: '💬', label: '会话' },
-  { id: 'contacts', icon: '👥', label: '通讯录' },
+  { id: 'contacts', icon: '👤', label: '通讯录' },
   { id: 'settings', icon: '⚙️', label: '设置' },
 ]
 
@@ -549,11 +462,11 @@ const settingsItems = [
   },
   {
     id: 'account',
-    title: '账户安全'
+    title: '账号与安全'
   },
   {
     id: 'notifications',
-    title: '通知设置'
+    title: '通知偏好'
   },
 ]
 
@@ -561,7 +474,7 @@ const activeItem = ref('profile')
 
 const handleSelect = (id) => {
   activeItem.value = id
-  console.log('选中项目：', id)
+  console.log('选择了条目：', id)
 }
 
 
@@ -571,14 +484,14 @@ const threads = {
       id: 1,
       role: "contact",
       author: "Sarah Johnson",
-      text: "嘿！你今天过得怎么样？",
+      text: "嗨，今天的进度怎么样？",
       time: "14:25",
     },
     {
       id: 2,
       role: "self",
       author: "我",
-      text: "状态不错，刚整理完信息卡片。稍后发给你。",
+      text: "状态我这边在更新，信息片段稍后发给你。",
       time: "14:27",
     },
   ],
@@ -587,14 +500,14 @@ const threads = {
       id: 1,
       role: "contact",
       author: "设计团队",
-      text: "新的配色方案已经发到群里邮件。",
+      text: "新的配色方案已经发到群邮件。",
       time: "13:40",
     },
     {
       id: 2,
       role: "self",
       author: "我",
-      text: "收到，我会在今晚前反馈，感谢。",
+      text: "收到，我会在今天前审阅，谢谢。",
       time: "13:42",
     },
   ],
@@ -603,14 +516,14 @@ const threads = {
       id: 1,
       role: "contact",
       author: "Mike Chen",
-      text: "会议资料已经上传到云盘。",
+      text: "数据集已经上传到云端。",
       time: "12:20",
     },
     {
       id: 2,
       role: "self",
       author: "我",
-      text: "好的，我午饭后立即查看。",
+      text: "好的，稍后我去查看。",
       time: "12:22",
     },
   ],
@@ -619,14 +532,14 @@ const threads = {
       id: 1,
       role: "contact",
       author: "项目Alpha",
-      text: "别忘了下午的同步会议。",
+      text: "今天下午有一个同步会议。",
       time: "11:30",
     },
     {
       id: 2,
       role: "self",
       author: "我",
-      text: "放心，我会提前十分钟准备。",
+      text: "明白，我会提前十分钟准备。",
       time: "11:33",
     },
   ],
@@ -635,14 +548,14 @@ const threads = {
       id: 1,
       role: "contact",
       author: "Emma Wilson",
-      text: "附件里是初版PRD，请审阅。",
+      text: "麻烦看看 PRD 的最新版本。",
       time: "10:15",
     },
     {
       id: 2,
       role: "self",
       author: "我",
-      text: "谢谢，稍后给你反馈意见。",
+      text: "谢谢，我会尽快反馈意见。",
       time: "10:18",
     },
   ],
@@ -651,7 +564,7 @@ const threads = {
       id: 1,
       role: "contact",
       author: "开发团队",
-      text: "Bug修复已经上线，请关注监控。",
+      text: "Bug 修复已经上线，请关注回归。",
       time: "昨天 20:05",
     },
     {
@@ -689,7 +602,7 @@ const filteredConversations = computed(() => {
   return conversations.filter((item) => {
     return (
       item.nameEn.toLowerCase().includes(keyword) ||
-      item.nameCn.includes(keyword) ||
+      item.nameCn.includes(searchTerm.value.trim()) ||
       item.snippet.toLowerCase().includes(keyword)
     )
   })
@@ -811,7 +724,7 @@ const confirmApproveFriendRequest = async () => {
   if (!request?.id || isProcessingFriendRequest.value) return
   let friendId = request.userId ?? null
   if (friendId === null || friendId === undefined) {
-    alert('未找到好友信息，无法同意申请')
+    alert('未找到好友信息，无法同意请求')
     return
   }
   const numericFriendId = Number(friendId)
@@ -844,11 +757,11 @@ const confirmApproveFriendRequest = async () => {
     alert(
       (typeof data === 'string' && data) ||
         message ||
-        `已同意 ${getRequestDisplayName(request)} 的好友申请。`,
+        `已同意 ${getRequestDisplayName(request)} 的好友请求。`,
     )
     loadFriendRequests()
   } catch (error) {
-    alert(error?.message || '同意好友申请失败，请稍后重试')
+    alert(error?.message || '同意请求时出错，请稍后重试')
   } finally {
     isProcessingFriendRequest.value = false
   }
@@ -871,7 +784,7 @@ const confirmRejectFriendRequest = async () => {
   if (!request?.id || isProcessingFriendRequest.value) return
   let friendId = request.userId ?? null
   if (friendId === null || friendId === undefined) {
-    alert('未找到好友信息，无法拒绝申请')
+    alert('未找到好友信息，无法拒绝请求')
     return
   }
   const numericFriendId = Number(friendId)
@@ -899,11 +812,11 @@ const confirmRejectFriendRequest = async () => {
     alert(
       (typeof data === 'string' && data) ||
         message ||
-        `已拒绝 ${getRequestDisplayName(request)} 的好友申请。`,
+        `已拒绝 ${getRequestDisplayName(request)} 的好友请求。`,
     )
     loadFriendRequests()
   } catch (error) {
-    alert(error?.message || '拒绝好友申请失败，请稍后重试')
+    alert(error?.message || '拒绝请求时出错，请稍后重试')
   } finally {
     isProcessingFriendRequest.value = false
   }
@@ -974,15 +887,14 @@ let currentUser = reactive({
 })
 
 const getUserInfo = async () => {
-
-    const { data } = await apiClient.get('/user/getUserInfo')
-    if (data){
-        currentUser.id = data.id ?? null
-        currentUser.email = data.email
-        currentUser.nickname = data.nickname
-        currentUser.avatarFullUrl = data.avatarFullUrl
-    }
-      console.log(currentUser)
+  const { data } = await apiClient.get('/user/getUserInfo')
+  if (data){
+    currentUser.id = data.id ?? null
+    currentUser.email = data.email
+    currentUser.nickname = data.nickname
+    currentUser.avatarFullUrl = data.avatarFullUrl
+  }
+  console.log(currentUser)
 }
 
 getUserInfo()
@@ -1084,19 +996,30 @@ loadFriendRequests()
   align-items: center;
   justify-content: space-between;
   gap: 12px;
+  position: relative; 
+  min-height: 40px; 
 }
+
 
 .sidebar-header h1 {
   margin: 0;
   font-size: 24px;
   font-weight: 700;
   letter-spacing: 0.02em;
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  width: auto;
+  white-space: nowrap;
 }
+
 
 .tools {
   display: flex;
   gap: 12px;
   align-items: center;
+  margin-left: auto; 
+  z-index: 1; 
 }
 
 .tool-button {
@@ -1215,178 +1138,6 @@ loadFriendRequests()
   border: 0;
 }
 
-/* .search {
-  display: flex;
-  gap: 12px;
-  align-items: center;
-  padding: 0 2px;
-}
-
-.search input {
-  flex: 1;
-  border: 1px solid #dbeadf;
-  border-radius: 16px;
-  padding: 12px 16px;
-  font-size: 14px;
-  background: rgba(243, 250, 245, 0.9);
-  transition: border 0.2s ease, box-shadow 0.2s ease;
-}
-
-.search input:focus {
-  outline: none;
-  border-color: #3cc47d;
-  box-shadow: 0 0 0 3px rgba(60, 196, 125, 0.2);
-}
-
-.search button {
-  width: 42px;
-  height: 42px;
-  border-radius: 14px;
-  border: none;
-  background: linear-gradient(135deg, #3cc47d, #2ea365);
-  color: #ffffff;
-  cursor: pointer;
-  font-size: 18px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: transform 0.2s ease, box-shadow 0.2s ease;
-}
-
-.search button:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 10px 20px rgba(46, 163, 101, 0.25);
-} */
-
-.conversation-list {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  overflow-y: auto;
-}
-
-.conversation-list li {
-  display: grid;
-  grid-template-columns: auto 1fr auto;
-  gap: 18px;
-  padding: 14px 16px;
-  border-radius: 18px;
-  background: transparent;
-  cursor: pointer;
-  transition: background 0.2s ease, box-shadow 0.2s ease;
-  align-items: center;
-}
-
-.conversation-list li:hover {
-  background: rgba(223, 240, 230, 0.6);
-  box-shadow: 0 10px 18px rgba(67, 120, 92, 0.1);
-}
-
-.conversation-list li.active {
-  background: linear-gradient(135deg, rgba(50, 195, 116, 0.18), rgba(29, 163, 104, 0.12));
-  box-shadow: 0 14px 20px rgba(69, 145, 101, 0.18);
-}
-
-.avatar {
-  position: relative;
-  width: 48px;
-  height: 48px;
-}
-
-.avatar img {
-  width: 100%;
-  height: 100%;
-  border-radius: 50%;
-  object-fit: cover;
-  box-shadow: 0 6px 12px rgba(40, 76, 58, 0.18);
-}
-
-.avatar .status {
-  position: absolute;
-  bottom: -2px;
-  right: -2px;
-  width: 14px;
-  height: 14px;
-  border-radius: 50%;
-  border: 2px solid #ffffff;
-}
-
-.avatar .status.online {
-  background: #31c173;
-}
-
-.avatar .status.away {
-  background: #f4b43a;
-}
-
-.avatar .status.offline {
-  background: #c0c9c3;
-}
-
-.info {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.info .row {
-  display: flex;
-  align-items: center;
-  align-items: flex-start; /* 椤堕儴瀵归綈 */
-}
-
-
-
-.name-block {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.name-block strong {
-  font-size: 15px;
-  line-height: 1.2;
-}
-
-.name-block {
-  font-size: 12px;
-  color: #728b78;
-}
-
-.info p {
-  margin: 0;
-  font-size: 13px;
-  color: #56725f;
-}
-
-.meta {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  gap: 6px;
-  font-size: 12px;
-  color: #728b78;
-}
-
-.meta .badge {
-  background: linear-gradient(135deg, #f66d6d, #e74b4b);
-  color: #fff;
-  width: 18px;
-  height: 18px;
-  border-radius: 50%;            /* 瀹屽叏鍦嗗舰 */
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 10px;               /* 瀛椾綋鏇寸粏 */
-  font-weight: 600;
-  line-height: 1;
-  box-shadow: 0 2px 6px rgba(231, 75, 75, 0.25);
-}
-
-
 .resize-handle {
   position: absolute;
   top: 0;
@@ -1413,270 +1164,6 @@ loadFriendRequests()
   background: rgba(60, 196, 125, 0.5);
 }
 
-.welcome {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-  padding: 40px 52px;
-}
-
-.highlight-bar {
-  display: flex;
-  gap: 18px;
-  align-items: center;
-
-}
-
-.divider {
-  width: 100%;
-  height: 1px;
-  margin: 0.75rem auto 0.5rem;
-  background-color: #ccc;
-  border-radius: 2px;
-}
-
-
-
-.highlight {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 10px;
-  transition: transform 0.2s ease;
-}
-
-.highlight:hover {
-  transform: translateY(-4px);
-}
-
-.highlight:hover img {
-  transform: scale(1.05);
-  box-shadow: 0 14px 28px rgba(58, 96, 74, 0.22);
-}
-
-.highlight img {
-  width: 52px;
-  height: 52px;
-  border-radius: 50%;
-  object-fit: cover;
-  border: 4px solid rgba(61, 191, 117, 0.85);
-  box-shadow: 0 8px 18px rgba(58, 96, 74, 0.18);
-  transition: transform 0.2s ease, box-shadow 0.2s ease;
-}
-
-.highlight span {
-  font-size: 13px;
-  color: #425b4a;
-}
-
-.empty-state {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 18px;
-  color: #31513d;
-  text-align: center;
-}
-
-.empty-state .icon {
-  width: 96px;
-  height: 96px;
-  border-radius: 28px;
-  background: rgba(49, 193, 115, 0.15);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 42px;
-  color: #2b9c67;
-}
-
-.empty-state h2 {
-  margin: 0;
-  font-size: 28px;
-  font-weight: 700;
-}
-
-.empty-state p {
-  margin: 0;
-  font-size: 14px;
-  line-height: 1.7;
-  color: #4f6b58;
-}
-
-.features {
-  list-style: none;
-  margin: 18px auto 0;
-  padding: 0;
-  display: flex;
-  gap: 12px;
-  justify-content: center;
-  flex-wrap: wrap;
-  max-width: 420px;
-}
-
-.features li {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 10px 16px;
-  border-radius: 16px;
-  background: #ffffff;
-  color: #325342;
-  font-size: 13px;
-  box-shadow: 0 10px 18px rgba(66, 103, 82, 0.12);
-}
-
-.conversation-view {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  padding: 18px 0;
-  color: #2b4738;
-}
-
-.conversation-view header .title {
-  display: flex;
-  align-items: baseline;
-  gap: 16px;
-}
-
-.conversation-view header h2 {
-  margin: 0;
-  font-size: 26px;
-  font-weight: 700;
-}
-
-.conversation-view header span {
-  font-size: 14px;
-  color: #6b8574;
-}
-
-.conversation-view header p {
-  margin: 12px 0 0;
-  color: #58725f;
-  font-size: 14px;
-}
-
-.message-list {
-  flex: 1;
-  list-style: none;
-  margin: 24px 0 0;
-  padding: 0 6px 0 0;
-  display: flex;
-  flex-direction: column;
-  gap: 18px;
-  overflow-y: auto;
-}
-
-.message {
-  display: flex;
-  align-items: flex-end;
-  gap: 12px;
-}
-
-.message.contact {
-  flex-direction: row;
-}
-
-.message.self {
-  flex-direction: row-reverse;
-}
-
-.message-avatar {
-  width: 40px;
-  height: 40px;
-  border-radius: 50%;
-  overflow: hidden;
-  flex-shrink: 0;
-  border: 2px solid rgba(255, 255, 255, 0.92);
-  box-shadow: 0 6px 16px rgba(45, 75, 58, 0.14);
-  align-self: flex-start;
-}
-
-.message-avatar img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  display: block;
-}
-
-.message.self .message-avatar {
-  border-color: rgba(50, 195, 116, 0.6);
-}
-
-.bubble {
-  max-width: 58%;
-  background: #ffffff;
-  border: 1px solid rgba(198, 221, 207, 0.8);
-  border-radius: 14px;
-  padding: 12px 14px;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  box-shadow: 0 10px 20px rgba(58, 96, 74, 0.08);
-}
-
-.message.self .bubble {
-  background: linear-gradient(135deg, #32c374, #1da368);
-  color: #0f2e1f;
-  border-color: transparent;
-}
-
-
-.message.self .bubble .author {
-  color: rgba(12, 51, 32, 0.72);
-}
-
-.bubble p {
-  margin: 0;
-  font-size: 14px;
-  line-height: 1.6;
-}
-
-
-
-.composer {
-  margin-top: 32px;
-  display: flex;
-  gap: 12px;
-}
-
-.composer input {
-  flex: 1;
-  border: 1px solid #d3e4d9;
-  border-radius: 14px;
-  padding: 12px 16px;
-  font-size: 14px;
-  color: #1f3526;
-  background: rgba(255, 255, 255, 0.92);
-}
-
-.composer input:focus {
-  outline: none;
-  border-color: #34c073;
-  box-shadow: 0 0 0 3px rgba(52, 192, 115, 0.18);
-}
-
-.composer button {
-  border: none;
-  background: linear-gradient(135deg, #32c374, #1da368);
-  color: #ffffff;
-  border-radius: 14px;
-  padding: 0 18px;
-  font-size: 14px;
-  font-weight: 600;
-  cursor: pointer;
-  box-shadow: 0 12px 20px rgba(45, 176, 103, 0.22);
-  transition: transform 0.2s ease, box-shadow 0.2s ease;
-}
-
-.composer button:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 16px 24px rgba(45, 176, 103, 0.28);
-}
 .friend-modal-fade-enter-active,
 .friend-modal-fade-leave-active {
   transition: opacity 0.24s ease;
@@ -1859,10 +1346,6 @@ loadFriendRequests()
   transform: translateY(-2px);
   box-shadow: 0 20px 32px rgba(45, 176, 103, 0.34);
 }
-to {
-    transform: rotate(360deg);
-  }
-
 
 .sidebar-placeholder {
   flex: 1;
@@ -1888,9 +1371,6 @@ to {
     padding: 24px 0;
   }
 
-  .welcome {
-    padding: 32px;
-  }
 }
 
 @media (max-width: 768px) {
@@ -1915,19 +1395,6 @@ to {
     display: none;
   }
 
-  .welcome {
-    padding: 24px;
-  }
-
-  .features {
-    flex-direction: column;
-    align-items: stretch;
-  }
-
-  .bubble {
-    max-width: 72%;
-  }
-
   .friend-modal-overlay {
     align-items: flex-end;
     padding: 24px 16px;
@@ -1940,7 +1407,3 @@ to {
   }
 }
 </style>
-
-
-
-
