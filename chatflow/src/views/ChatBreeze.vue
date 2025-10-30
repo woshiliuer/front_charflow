@@ -130,7 +130,7 @@
           
       </header>
 
-        <!-- 鍔犲叆鍒嗗壊绾?-->
+   
       <div class="divider"></div>
 
     <main v-if="!selectedConversation" class="empty-state">
@@ -265,6 +265,13 @@
       @cancel="closeApproveRemarkModal"
       @confirm="confirmApproveFriendRequest"
     />
+    <RejectFriendModal
+      :visible="showRejectConfirmModal"
+      :friend-name="pendingRejectName"
+      :loading="isProcessingFriendRequest"
+      @cancel="closeRejectFriendModal"
+      @confirm="confirmRejectFriendRequest"
+    />
 
   </div>
 </template>
@@ -274,6 +281,7 @@ import { ref, computed, onMounted, onBeforeUnmount, reactive } from 'vue'
 import ContactsDirectory from '@/components/chat/ContactsDirectory.vue'
 import AddFriendModal from '@/components/chat/AddFriendModal.vue'
 import FriendRemarkModal from '@/components/chat/FriendRemarkModal.vue'
+import RejectFriendModal from '@/components/chat/RejectFriendModal.vue'
 import { apiClient } from '@/services/apiClient'
 const conversations = [
   {
@@ -742,9 +750,14 @@ const isProcessingFriendRequest = ref(false)
 const showApproveRemarkModal = ref(false)
 const remarkDraft = ref('')
 const pendingApproveRequest = ref(null)
+const showRejectConfirmModal = ref(false)
+const pendingRejectRequest = ref(null)
 
 const pendingApproveName = computed(() =>
   getRequestDisplayName(pendingApproveRequest.value),
+)
+const pendingRejectName = computed(() =>
+  getRequestDisplayName(pendingRejectRequest.value),
 )
 
 const handleApproveFriendRequest = (request) => {
@@ -813,7 +826,20 @@ const confirmApproveFriendRequest = async () => {
   }
 }
 
-const handleRejectFriendRequest = async (request) => {
+const handleRejectFriendRequest = (request) => {
+  if (!request?.id || isProcessingFriendRequest.value) return
+  pendingRejectRequest.value = request
+  showRejectConfirmModal.value = true
+}
+
+const closeRejectFriendModal = () => {
+  if (isProcessingFriendRequest.value) return
+  showRejectConfirmModal.value = false
+  pendingRejectRequest.value = null
+}
+
+const confirmRejectFriendRequest = async () => {
+  const request = pendingRejectRequest.value
   if (!request?.id || isProcessingFriendRequest.value) return
   let friendId = request.userId ?? null
   if (friendId === null || friendId === undefined) {
@@ -824,14 +850,10 @@ const handleRejectFriendRequest = async (request) => {
   if (!Number.isNaN(numericFriendId)) {
     friendId = numericFriendId
   }
-  const confirmed = window.confirm(
-    `确定要拒绝 ${getRequestDisplayName(request)} 的好友申请吗？`,
-  )
-  if (!confirmed) return
   isProcessingFriendRequest.value = true
   try {
     const { data, message } = await apiClient.post(
-      '/friend/rejectFriendRequest',
+      '/friend/disagreeFriendRequest',
       { param: friendId },
     )
     const target = friendRequests.incoming.find(
@@ -844,6 +866,8 @@ const handleRejectFriendRequest = async (request) => {
       0,
       friendRequests.pendingCount - 1,
     )
+    showRejectConfirmModal.value = false
+    pendingRejectRequest.value = null
     alert(
       (typeof data === 'string' && data) ||
         message ||
@@ -856,7 +880,6 @@ const handleRejectFriendRequest = async (request) => {
     isProcessingFriendRequest.value = false
   }
 }
-
 const handleFriendAdded = () => {
   loadFriendRequests()
 }
@@ -1889,6 +1912,7 @@ to {
   }
 }
 </style>
+
 
 
 

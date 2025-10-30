@@ -210,8 +210,8 @@ const props = defineProps({
 const emit = defineEmits(['select-friend', 'approve-request', 'reject-request'])
 
 const expandedSections = reactive({
-  requests: true,
-  friends: true,
+  requests: false,
+  friends: false,
   groups: false,
 })
 
