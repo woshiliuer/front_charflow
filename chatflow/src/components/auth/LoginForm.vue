@@ -48,19 +48,36 @@
         <input v-model="form.remember" type="checkbox" />
         记住我
       </label>
-      <a href="#" class="link">忘记密码?</a>
+      <button type="button" class="link" @click="handleForgotPassword">
+        忘记密码?
+      </button>
     </div>
 
     <button type="submit" class="submit-button" :disabled="isSubmitting">
       {{ isSubmitting ? '登录中…' : '登录' }}
     </button>
   </form>
+
+  <ResetPasswordPanel
+    :visible="showResetPasswordModal"
+    :current-user="resetUser"
+    :submitting="resettingPassword"
+    :sending-code="sendingResetCode"
+    :code-countdown="resetCodeCountdown"
+    @close="closeResetPasswordModal"
+    @request-code="handleRequestResetCode"
+    @reset="handleResetPassword"
+  />
 </template>
 
 <script setup>
-import { reactive, ref } from 'vue'
+import { onBeforeUnmount, reactive, ref } from 'vue'
 import { apiClient } from '@/services/apiClient'
 import { useAuthStore } from '@/stores/auth'
+import ResetPasswordPanel from '@/components/settings/ResetPasswordPanel.vue'
+import { requestPasswordResetCode, recoverPassword } from '@/services/passwordRecovery'
+import { ElMessage } from 'element-plus'
+import 'element-plus/es/components/message/style/css'
 
 const emit = defineEmits(['submit', 'success'])
 
@@ -70,12 +87,107 @@ const form = reactive({
   remember: false,
 })
 
+const resetUser = reactive({
+  email: '',
+})
+
 const showPassword = ref(false)
 const isSubmitting = ref(false)
+const showResetPasswordModal = ref(false)
+const sendingResetCode = ref(false)
+const resettingPassword = ref(false)
+const resetCodeCountdown = ref(0)
+
 const authStore = useAuthStore()
+
+const RESET_CODE_COUNTDOWN = 60
+let resetCodeTimer = null
 
 const togglePassword = () => {
   showPassword.value = !showPassword.value
+}
+
+const handleForgotPassword = () => {
+  const email = form.email.trim()
+  if (!email) {
+    ElMessage.warning('请先输入邮箱地址')
+    return
+  }
+  resetUser.email = email
+  showResetPasswordModal.value = true
+}
+
+const clearResetPasswordState = () => {
+  if (resetCodeTimer) {
+    clearInterval(resetCodeTimer)
+    resetCodeTimer = null
+  }
+  resetCodeCountdown.value = 0
+}
+
+const closeResetPasswordModal = () => {
+  showResetPasswordModal.value = false
+  clearResetPasswordState()
+}
+
+const startResetCodeCountdown = (seconds = RESET_CODE_COUNTDOWN) => {
+  if (resetCodeTimer) {
+    clearInterval(resetCodeTimer)
+    resetCodeTimer = null
+  }
+  resetCodeCountdown.value = seconds
+  resetCodeTimer = setInterval(() => {
+    if (resetCodeCountdown.value <= 1) {
+      clearResetPasswordState()
+    } else {
+      resetCodeCountdown.value -= 1
+    }
+  }, 1000)
+}
+
+const handleRequestResetCode = async (email) => {
+  if (sendingResetCode.value) return
+  const targetEmail = email?.trim() || resetUser.email || ''
+  if (!targetEmail) {
+    ElMessage.warning('请输入邮箱以获取验证码')
+    return
+  }
+  try {
+    sendingResetCode.value = true
+    await requestPasswordResetCode(targetEmail)
+    ElMessage.success('验证码已发送，请查收邮箱')
+    startResetCodeCountdown()
+  } catch (error) {
+    console.error(error)
+    ElMessage.error(error?.message || '验证码发送失败，请稍后重试')
+  } finally {
+    sendingResetCode.value = false
+  }
+}
+
+const handleResetPassword = async ({ email, code, password, passwordConfirm }) => {
+  if (resettingPassword.value) return
+  const targetEmail = email?.trim() || resetUser.email || ''
+  if (!targetEmail) {
+    ElMessage.error('请提供邮箱地址以重置密码')
+    return
+  }
+  try {
+    resettingPassword.value = true
+    const { data } = await recoverPassword({
+      email: targetEmail,
+      code,
+      password,
+      passwordConfirm,
+    })
+    ElMessage.success(typeof data === 'string' && data ? data : '密码已重置，请使用新密码登录')
+    closeResetPasswordModal()
+  } catch (error) {
+    console.error(error)
+    ElMessage.error(error?.message || '重置密码失败，请稍后重试')
+  } finally {
+    resettingPassword.value = false
+  }
 }
 
 const handleSubmit = async () => {
@@ -112,6 +224,10 @@ const handleSubmit = async () => {
     isSubmitting.value = false
   }
 }
+
+onBeforeUnmount(() => {
+  clearResetPasswordState()
+})
 </script>
 
 <style scoped>
@@ -230,9 +346,13 @@ const handleSubmit = async () => {
 }
 
 .link {
+  background: transparent;
+  border: none;
+  padding: 0;
   text-decoration: none;
   color: var(--accent-dark, #0f172a);
   font-weight: 500;
+  cursor: pointer;
 }
 
 .submit-button {

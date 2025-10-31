@@ -195,7 +195,8 @@ const handleSendVerificationCode = async () => {
   try {
     isSendingCode.value = true
     const { data } = await apiClient.post('/user/getVerfCode', {
-      param: form.email,
+      email: form.email,
+      verfCodeType: 1,
     })
     startCountdown()
   } catch (error) {

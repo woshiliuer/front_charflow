@@ -19,13 +19,39 @@ const router = createRouter({
       path: '/chat/breeze',
       name: 'ChatBreezeShowcase',
       component: () => import('../views/ChatBreeze.vue'),
-      meta: { showcase: '简约蓝白消息中心' },
+      meta: { showcase: '简约蓝白消息中心', requiresAuth: true },
     },
   ],
 })
 
+const resetAuthState = () => {
+  clearStoredAuthToken()
+  try {
+    const authStore = useAuthStore()
+    authStore.clearToken()
+  } catch (error) {
+    console.warn('清理登录状态失败', error)
+  }
+}
+
 router.beforeEach(async (to) => {
   if (import.meta.env.SSR) return true
+
+  if (to.meta?.requiresAuth) {
+    const token = getStoredAuthToken()
+    if (!token) {
+      resetAuthState()
+      return { name: 'Login' }
+    }
+
+    const isValid = await validateAuthToken()
+    if (!isValid) {
+      resetAuthState()
+      return { name: 'Login' }
+    }
+
+    return true
+  }
 
   if (to.meta?.guestOnly) {
     const token = getStoredAuthToken()
@@ -36,13 +62,7 @@ router.beforeEach(async (to) => {
       return { path: '/chat/breeze' }
     }
 
-    clearStoredAuthToken()
-    try {
-      const authStore = useAuthStore()
-      authStore.clearToken()
-    } catch (error) {
-      console.warn('清理登录状态失败', error)
-    }
+    resetAuthState()
   }
 
   return true

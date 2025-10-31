@@ -95,6 +95,26 @@
       @update:draft="(v) => (draft = v)"
       @send="() => {}"
     />
+    <BrandShowcase v-else />
+    <UserProfilePanel
+      :visible="activeToolbar === 'settings' && showProfileModal"
+      :current-user="currentUser"
+      :loading="updatingProfile"
+      @close="closeProfileModal"
+      @update="handleProfileUpdate"
+      @change-avatar="handleAvatarChange"
+    />
+    <ResetPasswordPanel
+      :visible="activeToolbar === 'settings' && showResetPasswordModal"
+      :current-user="currentUser"
+      :submitting="resettingPassword"
+      :sending-code="sendingResetCode"
+      :code-countdown="resetCodeCountdown"
+      @close="closeResetPasswordModal"
+      @request-code="handleRequestResetCode"
+      @reset="handleResetPassword"
+    />
+
 
     <FriendDetailModal
       :visible="showFriendModal"
@@ -131,6 +151,7 @@
 
 <script setup>
 import { ref, computed, onMounted, onBeforeUnmount, reactive } from 'vue'
+import { useRouter } from 'vue-router'
 import ContactsDirectory from '@/components/chat/ContactsDirectory.vue'
 import MessageList from '@/components/chat/MessageList.vue'
 import AddFriendModal from '@/components/chat/AddFriendModal.vue'
@@ -138,8 +159,19 @@ import FriendRemarkModal from '@/components/chat/FriendRemarkModal.vue'
 import FriendDetailModal from '@/components/chat/FriendDetailModal.vue'
 import RejectFriendModal from '@/components/chat/RejectFriendModal.vue'
 import { apiClient } from '@/services/apiClient'
+import { requestPasswordResetCode, recoverPassword } from '@/services/passwordRecovery'
 import SettingsPanel from '@/components/settings/SettingsPanel.vue'
 import ConversationArea from '@/components/chat/ConversationArea.vue'
+import UserProfilePanel from '@/components/settings/UserProfilePanel.vue'
+import ResetPasswordPanel from '@/components/settings/ResetPasswordPanel.vue'
+import BrandShowcase from '@/components/common/BrandShowcase.vue'
+import { useAuthStore } from '@/stores/auth'
+import { ElMessage } from 'element-plus'
+import 'element-plus/es/components/message/style/css'
+
+const router = useRouter()
+const authStore = useAuthStore()
+
 const conversations = [
   {
     id: 1,
@@ -401,19 +433,42 @@ const settingsItems = [
   },
   {
     id: 'account',
-    title: '账号与安全'
+    title: '找回密码'
   },
   {
     id: 'notifications',
     title: '通知'
+  },
+  {
+    id: 'logout',
+    title: '退出'
   },
 ]
 
 const activeItem = ref('profile')
 
 const handleSelect = (id) => {
+  if (id === 'logout') {
+    handleLogout()
+    return
+  }
   activeItem.value = id
+  showProfileModal.value = id === 'profile'
+  showResetPasswordModal.value = id === 'account'
+  if (id !== 'account') {
+    clearResetPasswordState()
+  }
   console.log('选择了条目：', id)
+}
+
+const handleLogout = () => {
+  activeItem.value = 'profile'
+  showProfileModal.value = false
+  showResetPasswordModal.value = false
+  clearResetPasswordState()
+  authStore.clearToken()
+  ElMessage.success('已退出登录')
+  router.push({ name: 'Login' })
 }
 
 
@@ -530,6 +585,38 @@ const showFriendModal = ref(false)
 const showCreateMenu = ref(false)
 const toolsRef = ref(null)
 const showAddFriendModal = ref(false)
+const showProfileModal = ref(false)
+const showResetPasswordModal = ref(false)
+const updatingProfile = ref(false)
+const avatarUploading = ref(false)
+const sendingResetCode = ref(false)
+const resettingPassword = ref(false)
+const resetCodeCountdown = ref(0)
+let resetCodeTimer = null
+const RESET_CODE_COUNTDOWN = 60
+
+const clearResetPasswordState = () => {
+  if (resetCodeTimer) {
+    clearInterval(resetCodeTimer)
+    resetCodeTimer = null
+  }
+  resetCodeCountdown.value = 0
+}
+
+const startResetCodeCountdown = (seconds = RESET_CODE_COUNTDOWN) => {
+  if (resetCodeTimer) {
+    clearInterval(resetCodeTimer)
+    resetCodeTimer = null
+  }
+  resetCodeCountdown.value = seconds
+  resetCodeTimer = setInterval(() => {
+    if (resetCodeCountdown.value <= 1) {
+      clearResetPasswordState()
+    } else {
+      resetCodeCountdown.value -= 1
+    }
+  }, 1000)
+}
 
 const searchPlaceholder = computed(() =>
   activeToolbar.value === 'contacts' ? '搜索通讯录...' : 'Search conversations...',
@@ -600,6 +687,11 @@ const selectToolbarAction = (id) => {
   showAddFriendModal.value = false
   if (id !== 'contacts') {
     showFriendModal.value = false
+  }
+  if (id !== 'settings') {
+    showProfileModal.value = false
+  } else {
+    showProfileModal.value = false
   }
   if (id === 'contacts') {
     if (!activeFriendId.value && filteredContacts.value.length) {
@@ -816,28 +908,156 @@ onBeforeUnmount(() => {
   window.removeEventListener('mousemove', onMouseMove)
   window.removeEventListener('mouseup', onMouseUp)
   window.removeEventListener('click', handleGlobalClick)
+  clearResetPasswordState()
 })
 
 let currentUser = reactive({
   id: null,
   email: '',
   nickname: '',
+  avatarUrl: '',
   avatarFullUrl: '',
+  gender: '',
+  genderDesc: '',
+  signature: '',
 })
+
+const normalizeGender = (value) => {
+  if (value === undefined || value === null) return ''
+  const text = String(value).trim()
+  if (text === '1') return 'male'
+  if (text === '2') return 'female'
+  const lower = text.toLowerCase()
+  if (lower === 'male' || lower === 'm') return 'male'
+  if (lower === 'female' || lower === 'f') return 'female'
+  if (text === '男') return 'male'
+  if (text === '女') return 'female'
+  return ''
+}
 
 const getUserInfo = async () => {
   const { data } = await apiClient.get('/user/getUserInfo')
   if (data){
     currentUser.id = data.id ?? null
-    currentUser.email = data.email
-    currentUser.nickname = data.nickname
-    currentUser.avatarFullUrl = data.avatarFullUrl
+    currentUser.email = data.email ?? ''
+    currentUser.nickname = data.nickname ?? ''
+    const avatarUrl = data.avatarUrl ?? data.avatarFullUrl ?? ''
+    currentUser.avatarUrl = avatarUrl
+    currentUser.avatarFullUrl = data.avatarFullUrl ?? avatarUrl
+    currentUser.signature = data.signature ?? ''
+    currentUser.genderDesc = data.genderDesc ?? ''
+    currentUser.gender = normalizeGender(data.gender ?? data.genderDesc)
   }
   console.log(currentUser)
 }
 
 getUserInfo()
 loadFriendRequests()
+const closeProfileModal = () => {
+  showProfileModal.value = false
+}
+
+const closeResetPasswordModal = () => {
+  showResetPasswordModal.value = false
+  clearResetPasswordState()
+}
+
+const handleProfileUpdate = async (payload) => {
+  if (updatingProfile.value) return
+  const genderValue = (() => {
+    if (payload.gender === 'male') return 1
+    if (payload.gender === 'female') return 2
+    return 0
+  })()
+  const body = {
+    nickname: payload.displayName ?? '',
+    signature: payload.signature ?? '',
+    gender: genderValue,
+  }
+  try {
+    updatingProfile.value = true
+    await apiClient.post('/user/updateUserInfo', body)
+    ElMessage.success('个人资料已保存')
+    await getUserInfo()
+    closeProfileModal()
+  } catch (error) {
+    console.error(error)
+    ElMessage.error(error?.message || '保存个人资料失败，请稍后重试')
+  } finally {
+    updatingProfile.value = false
+  }
+}
+
+const handleRequestResetCode = async (email) => {
+  if (sendingResetCode.value) return
+  const targetEmail = email?.trim() || currentUser.email || ''
+  if (!targetEmail) {
+    ElMessage.warning('当前账号缺少邮箱信息，无法发送验证码')
+    return
+  }
+  try {
+    sendingResetCode.value = true
+    await requestPasswordResetCode(targetEmail)
+    ElMessage.success('验证码已发送，请查收邮箱')
+    startResetCodeCountdown()
+  } catch (error) {
+    console.error(error)
+    ElMessage.error(error?.message || '验证码发送失败，请稍后重试')
+  } finally {
+    sendingResetCode.value = false
+  }
+}
+
+const handleResetPassword = async ({ email, code, password, passwordConfirm }) => {
+  if (resettingPassword.value) return
+  const targetEmail = email?.trim() || currentUser.email || ''
+  if (!targetEmail) {
+    ElMessage.error('当前账号缺少邮箱信息，无法重置密码')
+    return
+  }
+  try {
+    resettingPassword.value = true
+    const { data } = await recoverPassword({
+      email: targetEmail,
+      code,
+      password,
+      passwordConfirm,
+    })
+    ElMessage.success(typeof data === 'string' && data ? data : '密码已重置，请使用新密码登录')
+    closeResetPasswordModal()
+  } catch (error) {
+    console.error(error)
+    ElMessage.error(error?.message || '重置密码失败，请稍后重试')
+  } finally {
+    resettingPassword.value = false
+  }
+}
+
+const handleAvatarChange = async (file) => {
+  if (!file || avatarUploading.value) return
+  const formData = new FormData()
+  formData.append('file', file)
+  try {
+    avatarUploading.value = true
+    const { data } = await apiClient.postForm('/user/uploadAvatar', formData)
+    const nextUrl =
+      typeof data === 'string'
+        ? data
+        : data?.url ?? data?.avatarUrl ?? data?.avatarFullUrl ?? ''
+    if (nextUrl) {
+      currentUser.avatarUrl = nextUrl
+      currentUser.avatarFullUrl = nextUrl
+    }
+    ElMessage.success('头像上传成功')
+     await getUserInfo()
+  } catch (error) {
+    console.error(error)
+    ElMessage.error(error?.message || '上传头像失败，请稍后重试')
+  } finally {
+    avatarUploading.value = false
+  }
+}
+
 
 </script>
 

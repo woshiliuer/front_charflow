@@ -75,4 +75,21 @@ export const apiClient = {
     })
     return parseResponse(response)
   },
+  async postForm(path, formData, options = {}) {
+    const url = joinUrl(API_BASE_PATH, path)
+    const headers = {
+      ...(options.headers ?? {}),
+    }
+    const token = getStoredAuthToken()
+    if (token) {
+      headers.Authorization = `Bearer ${token}`
+    }
+    const response = await fetch(url, {
+      method: 'POST',
+      body: formData,
+      ...options,
+      headers,
+    })
+    return parseResponse(response)
+  },
 }
