@@ -198,17 +198,53 @@
       >
         <span class="folder-icon" aria-hidden="true">📁</span>
         <span class="folder-title">群聊</span>
-        <span class="folder-meta muted">规划中</span>
+        <span class="folder-meta muted">
+          {{ groupCount ? `${groupCount} 个群聊` : '暂未加入群聊' }}
+        </span>
         <span class="folder-arrow" aria-hidden="true">
           {{ expandedSections.groups ? '▾' : '▸' }}
         </span>
       </button>
       <transition name="directory-collapse">
         <div v-if="expandedSections.groups" class="folder-content">
-          <div class="empty-hint">
-            <span aria-hidden="true">🛠️</span>
-            <p>群聊功能正在搭建，敬请期待。</p>
+          <div v-if="isLoadingGroups" class="empty-hint">
+            <span aria-hidden="true">⏳</span>
+            <p>群聊列表加载中，请稍候...</p>
           </div>
+          <div v-else-if="groupsError" class="empty-hint">
+            <span aria-hidden="true">⚠️</span>
+            <p>{{ groupsError }}</p>
+            <button
+              type="button"
+              class="hint-action"
+              :disabled="isLoadingGroups"
+              @click="retryLoadGroups"
+            >
+              重新加载
+            </button>
+          </div>
+          <div v-else-if="!groups.length" class="empty-hint">
+            <span aria-hidden="true">🌱</span>
+            <p>暂未加入任何群聊，快去创建或加入一个吧！</p>
+          </div>
+          <ul v-else class="group-list">
+            <li v-for="group in groups" :key="group.id" class="group-item">
+              <div class="group-avatar">
+                <img
+                  v-if="group.avatar"
+                  :src="group.avatar"
+                  :alt="group.name"
+                />
+                <span v-else>{{ getGroupInitial(group.name) }}</span>
+              </div>
+              <div class="group-info">
+                <strong>{{ group.name }}</strong>
+                <span v-if="getGroupRoleLabel(group.role)" class="group-role">
+                  {{ getGroupRoleLabel(group.role) }}
+                </span>
+              </div>
+            </li>
+          </ul>
         </div>
       </transition>
     </section>
@@ -218,7 +254,8 @@
 <script setup>
 import { computed, reactive, ref, onMounted } from 'vue'
 import ChatFriendsList from './ChatFriendsList.vue'
-import { apiClient } from '@/services/apiClient'
+import { fetchNormalizedFriends } from '@/services/friendService'
+import { fetchNormalizedGroups } from '@/services/groupService'
 
 const props = defineProps({
   friendRequests: {
@@ -253,6 +290,9 @@ const expandedSections = reactive({
 const loadedFriends = ref(null)
 const isLoadingFriends = ref(false)
 const friendsError = ref('')
+const groups = ref([])
+const isLoadingGroups = ref(false)
+const groupsError = ref('')
 
 const friendsFromProps = computed(() =>
   Array.isArray(props.friends) ? props.friends : [],
@@ -266,6 +306,7 @@ const friends = computed(() => {
 })
 
 const friendCount = computed(() => friends.value.length)
+const groupCount = computed(() => groups.value.length)
 
 const incomingRequests = computed(
   () => props.friendRequests?.incoming ?? [],
@@ -285,58 +326,13 @@ const totalRequestCount = computed(
   },
 )
 
-const mapFriendStatus = (status) => {
-  if (typeof status === 'string') {
-    const normalized = status.trim().toLowerCase()
-    if (normalized === 'online') return 'online'
-    if (normalized === 'offline') return 'offline'
-    return normalized
-  }
-  const value = Number(status)
-  if (Number.isNaN(value)) return 'offline'
-  if (value === 1) return 'online'
-  if (value === 2) return 'offline'
-  return 'offline'
-}
-
-const normalizeFriend = (item = {}, index) => {
-  const id =
-    item.id ??
-    item.friendId ??
-    item.userId ??
-    item.targetId ??
-    `friend-${index}`
-  const displayName =
-    item.remark ??
-    item.nickname ??
-    item.name ??
-    item.username ??
-    `好友 ${index + 1}`
-  return {
-    ...item,
-    id,
-    avatar:
-      item.avatarFullUrl ??
-      item.avatarUrl ??
-      item.avatar ??
-      '',
-    nameEn: displayName,
-    nameCn: item.nameCn ?? '',
-    description: item.description ?? item.signature ?? '',
-    lastActive: item.lastActive ?? '',
-    status: mapFriendStatus(item.status),
-  }
-}
-
 const loadFriends = async ({ force = false } = {}) => {
   if (isLoadingFriends.value) return
   if (!force && loadedFriends.value !== null) return
   friendsError.value = ''
   isLoadingFriends.value = true
   try {
-    const { data } = await apiClient.post('/friend/getFriends', {})
-    const list = Array.isArray(data) ? data : []
-    loadedFriends.value = list.map((item, index) => normalizeFriend(item, index))
+    loadedFriends.value = await fetchNormalizedFriends()
   } catch (error) {
     friendsError.value = error?.message || '好友列表获取失败，请稍后重试'
     if (force && loadedFriends.value === null) {
@@ -351,12 +347,37 @@ const retryLoadFriends = () => {
   loadFriends({ force: true })
 }
 
+const loadGroups = async ({ force = false } = {}) => {
+  if (isLoadingGroups.value) return
+  if (!force && groups.value.length) return
+  groupsError.value = ''
+  isLoadingGroups.value = true
+  try {
+    groups.value = await fetchNormalizedGroups()
+  } catch (error) {
+    groupsError.value = error?.message || '群聊列表获取失败，请稍后重试'
+    if (force && !groups.value.length) {
+      groups.value = []
+    }
+  } finally {
+    isLoadingGroups.value = false
+  }
+}
+
+const retryLoadGroups = () => {
+  loadGroups({ force: true })
+}
+
 onMounted(() => {
   loadFriends()
+  loadGroups()
 })
 
 const toggleSection = (section) => {
   expandedSections[section] = !expandedSections[section]
+  if (section === 'groups' && expandedSections.groups && !groups.value.length && !isLoadingGroups.value) {
+    loadGroups()
+  }
 }
 
 const approveRequest = (request) => {
@@ -406,6 +427,24 @@ const getStatusClass = (item) => {
 }
 
 const isPending = (item) => getRequestStatus(item) === 0
+
+const GROUP_ROLE_LABELS = {
+  1: '成员',
+  2: '管理员',
+  3: '群主',
+}
+
+const getGroupRoleLabel = (role) => {
+  const value = Number(role)
+  if (Number.isNaN(value)) return ''
+  return GROUP_ROLE_LABELS[value] ?? ''
+}
+
+const getGroupInitial = (text = '') => {
+  const trimmed = text.trim()
+  if (!trimmed) return '群'
+  return trimmed.charAt(0).toUpperCase()
+}
 
 </script>
 
@@ -561,6 +600,69 @@ const isPending = (item) => getRequestStatus(item) === 0
   flex-wrap: wrap;
   gap: 6px;
   align-items: center;
+}
+
+.group-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 12px;
+}
+
+.group-item {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 12px 14px;
+  border-radius: 16px;
+  background: rgba(233, 245, 238, 0.7);
+  transition: transform 0.16s ease, background 0.16s ease;
+}
+
+.group-item:hover {
+  transform: translateY(-2px);
+  background: rgba(226, 240, 233, 0.85);
+}
+
+.group-avatar {
+  width: 44px;
+  height: 44px;
+  border-radius: 16px;
+  overflow: hidden;
+  background: rgba(210, 236, 221, 0.8);
+  display: grid;
+  place-items: center;
+  font-size: 18px;
+  font-weight: 600;
+  color: #1c5038;
+}
+
+.group-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.group-info {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  color: #244836;
+}
+
+.group-info strong {
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.group-role {
+  font-size: 12px;
+  color: #3c7753;
+  background: rgba(201, 231, 212, 0.8);
+  border-radius: 999px;
+  padding: 2px 8px;
+  align-self: flex-start;
 }
 
 .request-badge {

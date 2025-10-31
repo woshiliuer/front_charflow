@@ -121,6 +121,7 @@
       :friend="selectedFriend"
       @close="closeFriendModal"
       @send="handleSendMessageToFriend"
+      @delete="handleFriendDeleted"
     />
     <AddFriendModal
       :visible="showAddFriendModal"
@@ -128,6 +129,13 @@
       :current-user-email="currentUser.email"
       @close="closeAddFriendModal"
       @friend-added="handleFriendAdded"
+    />
+    <CreateGroupModal
+      :visible="showCreateGroupModal"
+      :friends="contacts"
+      :submitting="isCreatingGroup"
+      @close="closeCreateGroupModal"
+      @confirm="handleCreateGroupConfirm"
     />
     <FriendRemarkModal
       :visible="showApproveRemarkModal"
@@ -150,15 +158,17 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, onBeforeUnmount, reactive } from 'vue'
+import { ref, computed, onMounted, onBeforeUnmount, reactive, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import ContactsDirectory from '@/components/chat/ContactsDirectory.vue'
 import MessageList from '@/components/chat/MessageList.vue'
 import AddFriendModal from '@/components/chat/AddFriendModal.vue'
+import CreateGroupModal from '@/components/chat/CreateGroupModal.vue'
 import FriendRemarkModal from '@/components/chat/FriendRemarkModal.vue'
 import FriendDetailModal from '@/components/chat/FriendDetailModal.vue'
 import RejectFriendModal from '@/components/chat/RejectFriendModal.vue'
 import { apiClient } from '@/services/apiClient'
+import { fetchNormalizedFriends } from '@/services/friendService'
 import { requestPasswordResetCode, recoverPassword } from '@/services/passwordRecovery'
 import SettingsPanel from '@/components/settings/SettingsPanel.vue'
 import ConversationArea from '@/components/chat/ConversationArea.vue'
@@ -259,73 +269,9 @@ const highlights = [
   },
 ]
 
-const contacts = [
-  {
-    id: 'c1',
-    nameEn: 'Ava Thompson',
-    nameCn: '',
-    status: 'online',
-    avatar: 'https://randomuser.me/api/portraits/women/65.jpg',
-    description: 'Product Manager, Remote',
-    lastActive: 'Online',
-    nickname: 'Ava',
-    email: 'ava.thompson@example.com',
-    remark: 'Roadmap 协作负责人',
-    signature: 'Keep shipping delightful experiences.',
-  },
-  {
-    id: 'c2',
-    nameEn: 'Jason Lee',
-    nameCn: '',
-    status: 'away',
-    avatar: 'https://randomuser.me/api/portraits/men/12.jpg',
-    description: 'UX Researcher, Seoul',
-    lastActive: '2 min ago',
-    nickname: 'Jay',
-    email: 'jason.lee@example.com',
-    remark: '可就产品再约下次访谈',
-    signature: 'Design is thinking made visual.',
-  },
-  {
-    id: 'c3',
-    nameEn: 'Priya Patel',
-    nameCn: '',
-    status: 'online',
-    avatar: 'https://randomuser.me/api/portraits/women/33.jpg',
-    description: 'Data Scientist, Mumbai',
-    lastActive: 'Online',
-    nickname: 'Pri',
-    email: 'priya.patel@example.com',
-    remark: '数据支持 & 分析',
-    signature: 'Turning data into quiet stories.',
-  },
-  {
-    id: 'c4',
-    nameEn: 'Noah Garcia',
-    nameCn: '',
-    status: 'offline',
-    avatar: 'https://randomuser.me/api/portraits/men/71.jpg',
-    description: 'Backend Engineer, Madrid',
-    lastActive: '1 hr ago',
-    nickname: 'Noah G.',
-    email: 'noah.garcia@example.com',
-    remark: '后端服务对接',
-    signature: 'APIs with a touch of espresso.',
-  },
-  {
-    id: 'c5',
-    nameEn: 'Sofia Rossi',
-    nameCn: '',
-    status: 'online',
-    avatar: 'https://randomuser.me/api/portraits/women/21.jpg',
-    description: 'Marketing Lead, Milan',
-    lastActive: 'Online',
-    nickname: 'Sofi',
-    email: 'sofia.rossi@example.com',
-    remark: 'Campaign 同步推进',
-    signature: 'Stories that connect hearts.',
-  },
-]
+const contacts = ref([])
+const contactsLoading = ref(false)
+const contactsError = ref('')
 
 const friendRequests = reactive({
   incoming: [],
@@ -585,6 +531,8 @@ const showFriendModal = ref(false)
 const showCreateMenu = ref(false)
 const toolsRef = ref(null)
 const showAddFriendModal = ref(false)
+const showCreateGroupModal = ref(false)
+const isCreatingGroup = ref(false)
 const showProfileModal = ref(false)
 const showResetPasswordModal = ref(false)
 const updatingProfile = ref(false)
@@ -594,6 +542,15 @@ const resettingPassword = ref(false)
 const resetCodeCountdown = ref(0)
 let resetCodeTimer = null
 const RESET_CODE_COUNTDOWN = 60
+
+watch(
+  () => contacts.value.length,
+  (length) => {
+    if (length > 0 && !activeFriendId.value) {
+      activeFriendId.value = contacts.value[0].id
+    }
+  },
+)
 
 const clearResetPasswordState = () => {
   if (resetCodeTimer) {
@@ -634,10 +591,11 @@ const filteredConversations = computed(() => {
   })
 })
 const filteredContacts = computed(() => {
-  if (!searchTerm.value.trim()) return contacts
+  const list = Array.isArray(contacts.value) ? contacts.value : []
+  if (!searchTerm.value.trim()) return list
   const keyword = searchTerm.value.trim().toLowerCase()
   const rawKeyword = searchTerm.value.trim()
-  return contacts.filter((friend) => {
+  return list.filter((friend) => {
     const matchesEn = friend.nameEn.toLowerCase().includes(keyword)
     const matchesCn = friend.nameCn ? friend.nameCn.includes(rawKeyword) : false
     const matchesDescription = friend.description
@@ -647,8 +605,29 @@ const filteredContacts = computed(() => {
   })
 })
 
+const loadFriends = async () => {
+  if (contactsLoading.value) return
+  contactsError.value = ''
+  contactsLoading.value = true
+  try {
+    contacts.value = await fetchNormalizedFriends()
+  } catch (error) {
+    contactsError.value = error?.message || '好友列表加载失败，请稍后重试'
+    console.error('加载好友列表失败', error)
+    ElMessage.error(contactsError.value)
+  } finally {
+    contactsLoading.value = false
+  }
+}
+
+const ensureFriendsLoaded = async () => {
+  if (contacts.value.length || contactsLoading.value) return
+  await loadFriends()
+}
+
 const selectedFriend = computed(() => {
-  return contacts.find((friend) => friend.id === activeFriendId.value) || null
+  const list = Array.isArray(contacts.value) ? contacts.value : []
+  return list.find((friend) => friend.id === activeFriendId.value) || null
 })
 
 const toggleCreateMenu = () => {
@@ -681,7 +660,7 @@ const selectedThread = computed(() => {
   if (!activeConversationId.value) return []
   return threads[activeConversationId.value] || []
 })
-const selectToolbarAction = (id) => {
+const selectToolbarAction = async (id) => {
   activeToolbar.value = id
   showCreateMenu.value = false
   showAddFriendModal.value = false
@@ -694,6 +673,7 @@ const selectToolbarAction = (id) => {
     showProfileModal.value = false
   }
   if (id === 'contacts') {
+    await ensureFriendsLoaded()
     if (!activeFriendId.value && filteredContacts.value.length) {
       activeFriendId.value = filteredContacts.value[0].id
     }
@@ -716,6 +696,10 @@ const closeFriendModal = () => {
 
 const closeAddFriendModal = () => {
   showAddFriendModal.value = false
+}
+
+const closeCreateGroupModal = () => {
+  showCreateGroupModal.value = false
 }
 
 const isProcessingFriendRequest = ref(false)
@@ -854,6 +838,14 @@ const confirmRejectFriendRequest = async () => {
 }
 const handleFriendAdded = () => {
   loadFriendRequests()
+  loadFriends()
+}
+
+const handleFriendDeleted = async () => {
+  showFriendModal.value = false
+  activeFriendId.value = null
+  await loadFriends()
+  loadFriendRequests()
 }
 
 const handleSendMessageToFriend = () => {
@@ -864,11 +856,62 @@ const handleSendMessageToFriend = () => {
   activeToolbar.value = 'conversations'
 }
 
-const handleStartGroup = () => {
+const handleStartGroup = async () => {
   showCreateMenu.value = false
-  selectToolbarAction('conversations')
-  activeConversationId.value = null
-  draft.value = '群聊主题：'
+  await selectToolbarAction('conversations')
+  await ensureFriendsLoaded()
+  if (!contacts.value.length) {
+    const message = contactsError.value || '暂无好友可选，请先添加好友'
+    ElMessage.warning(message)
+    return
+  }
+  showCreateGroupModal.value = true
+}
+
+const handleCreateGroupConfirm = async ({ name, memberIds, members }) => {
+  if (isCreatingGroup.value) return
+  const normalizeIdValue = (value) => {
+    if (value === null || value === undefined) return null
+    const numeric = Number(value)
+    return Number.isNaN(numeric) ? value : numeric
+  }
+  const memberIdSources = Array.isArray(members)
+    ? members.map((item) => item?.userId ?? item?.id)
+    : Array.isArray(memberIds)
+    ? memberIds
+    : []
+  const normalizedIds = memberIdSources
+    .map((value) => normalizeIdValue(value))
+    .filter((value) => value !== null)
+  const uniqueMemberIds = []
+  const seen = new Set()
+  const addUnique = (id) => {
+    if (id === null || id === undefined) return
+    const key = String(id)
+    if (seen.has(key)) return
+    seen.add(key)
+    uniqueMemberIds.push(id)
+  }
+  normalizedIds.forEach((id) => addUnique(id))
+  if (uniqueMemberIds.length === 0) {
+    ElMessage.warning('请选择至少一位好友创建群聊')
+    return
+  }
+  isCreatingGroup.value = true
+  try {
+    await apiClient.post('/group/addGroup', {
+      groupName: name,
+      memberIds: uniqueMemberIds,
+    })
+    showCreateGroupModal.value = false
+    ElMessage.success(`已创建群聊 "${name}"`)
+  } catch (error) {
+    const message =
+      error?.response?.data?.message || error?.message || '创建群聊失败，请稍后重试'
+    ElMessage.error(message)
+  } finally {
+    isCreatingGroup.value = false
+  }
 }
 
 
@@ -953,6 +996,7 @@ const getUserInfo = async () => {
 
 getUserInfo()
 loadFriendRequests()
+loadFriends()
 const closeProfileModal = () => {
   showProfileModal.value = false
 }
