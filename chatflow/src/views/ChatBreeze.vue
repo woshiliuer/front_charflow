@@ -1,8 +1,30 @@
 ﻿<template>
   <div class="chat-breeze">
     <aside class="sidebar-toolbar">
-      <div class="toolbar-avatar">
-        <img :src="currentUser.avatarFullUrl" :alt="currentUser.nickname" />
+      <div class="toolbar-avatar" ref="toolbarAvatarRef">
+        <button
+          type="button"
+          class="toolbar-avatar-button"
+          @click.stop="toggleProfileCard"
+          aria-haspopup="dialog"
+          :aria-expanded="showProfileCard"
+        >
+          <img
+            v-if="hasAvatar"
+            :src="currentUser.avatarFullUrl"
+            :alt="currentUser.nickname || '用户头像'"
+          />
+          <span v-else class="toolbar-avatar-initial">
+            {{ currentUserInitial }}
+          </span>
+        </button>
+        <ProfilePopover
+          ref="profileCardRef"
+          :visible="showProfileCard"
+          :user="currentUser"
+          :has-avatar="hasAvatar"
+          :initial="currentUserInitial"
+        />
       </div>
       <ul class="toolbar-actions">
         <li v-for="action in toolbarActions" :key="action.id">
@@ -167,6 +189,7 @@ import CreateGroupModal from '@/components/chat/CreateGroupModal.vue'
 import FriendRemarkModal from '@/components/chat/FriendRemarkModal.vue'
 import FriendDetailModal from '@/components/chat/FriendDetailModal.vue'
 import RejectFriendModal from '@/components/chat/RejectFriendModal.vue'
+import ProfilePopover from '@/components/profile/ProfilePopover.vue'
 import { apiClient } from '@/services/apiClient'
 import { fetchNormalizedFriends } from '@/services/friendService'
 import { requestPasswordResetCode, recoverPassword } from '@/services/passwordRecovery'
@@ -182,92 +205,110 @@ import 'element-plus/es/components/message/style/css'
 const router = useRouter()
 const authStore = useAuthStore()
 
-const conversations = [
-  {
-    id: 1,
-    nameEn: 'Sarah Johnson',
-    nameCn: '莎拉·约翰逊',
-    period: '今天',
-    clock: '2:30',
-    snippet: '嗨，今天那件事你那边怎么处理？',
-    unread: 3,
-    status: 'online',
-    avatar: 'https://randomuser.me/api/portraits/women/9.jpg',
-  },
-  {
-    id: 2,
-    nameEn: 'Design Team',
-    nameCn: '设计团队',
-    period: '今天',
-    clock: '1:45',
-    snippet: '[图片] 新的 banner 待确认',
-    unread: 12,
-    status: 'online',
-    avatar: 'https://images.unsplash.com/photo-1521737604893-d14cc237f11d?auto=format&fit=crop&w=120&q=80',
-  },
-  {
-    id: 3,
-    nameEn: 'Mike Chen',
-    nameCn: '麦克·陈',
-    period: '今天',
-    clock: '12:20',
-    snippet: '[语音信息] 刚刚那段录了',
-    unread: 0,
-    status: 'away',
-    avatar: 'https://randomuser.me/api/portraits/men/32.jpg',
-  },
-  {
-    id: 4,
-    nameEn: 'Project Alpha',
-    nameCn: '项目A',
-    period: '今天',
-    clock: '11:30',
-    snippet: '同步会下午 3 点开始',
-    unread: 5,
-    status: 'online',
-    avatar: 'https://images.unsplash.com/photo-1522196772883-393d879eb14d?auto=format&fit=crop&w=120&q=80',
-  },
-  {
-    id: 5,
-    nameEn: 'Emma Wilson',
-    nameCn: '艾玛·威尔逊',
-    period: '今天',
-    clock: '10:15',
-    snippet: '[文件] PRD 已更新',
-    unread: 0,
-    status: 'offline',
-    avatar: 'https://randomuser.me/api/portraits/women/17.jpg',
-  },
-  {
-    id: 6,
-    nameEn: 'Development Team',
-    nameCn: '开发团队',
-    period: '昨天',
-    clock: '20:05',
-    snippet: '缺陷修复已完成',
-    unread: 0,
-    status: 'online',
-    avatar: 'https://images.unsplash.com/photo-1454165205744-3b78555e5572?auto=format&fit=crop&w=120&q=80',
-  },
-]
+const conversations = ref([])
+const conversationsLoading = ref(false)
 
-const highlights = [
-  {
-    id: 1,
-    name: 'Sarah 莎拉',
-    avatar: 'https://randomuser.me/api/portraits/women/9.jpg',
-  },
-  {
-    id: 3,
-    name: 'Mike 麦克',
-    avatar: 'https://randomuser.me/api/portraits/men/32.jpg',
-  },
-  {
-    id: 5,
-    name: 'Emma 艾玛',
-    avatar: 'https://randomuser.me/api/portraits/women/17.jpg',
-  },
-]
+const DEFAULT_AVATAR_URL =
+  'https://chat-flow.oss-cn-guangzhou.aliyuncs.com/default-avatar/default-person.jpg'
+
+const parseTimestamp = (value) => {
+  if (value === undefined || value === null || value === '') return null
+  let ms = Number(value)
+  if (!Number.isFinite(ms)) return null
+  if (ms < 1e12) {
+    ms *= 1000
+  }
+  const date = new Date(ms)
+  return Number.isNaN(date.getTime()) ? null : date.getTime()
+}
+
+const formatConversationClock = (timestamp) => {
+  if (!Number.isFinite(timestamp)) return ''
+  const date = new Date(timestamp)
+  if (Number.isNaN(date.getTime())) return ''
+  const now = new Date()
+  const sameDay = date.toDateString() === now.toDateString()
+  const sameYear = date.getFullYear() === now.getFullYear()
+  if (sameDay) {
+    return date.toLocaleTimeString('zh-CN', {
+      hour12: false,
+      hour: '2-digit',
+      minute: '2-digit',
+    })
+  }
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const day = String(date.getDate()).padStart(2, '0')
+  if (sameYear) {
+    return `${month}-${day}`
+  }
+  return `${date.getFullYear()}-${month}-${day}`
+}
+
+const normalizeConversation = (item, index) => {
+  if (!item) return null
+  const rawId = item.id ?? item.sessionId ?? index
+  const numericId = Number(rawId)
+  const id = Number.isFinite(numericId) ? numericId : rawId
+  const displayName = item.displayName || item.name || `会话 ${id}`
+  const sendTime = parseTimestamp(item.sendTime)
+  const unreadCount = Number(item.unreadCount)
+  const avatar = item.avatarFullUrl || DEFAULT_AVATAR_URL
+
+  return {
+    id,
+    displayName,
+    nameEn: displayName,
+    nameCn: item.nameCn || '',
+    snippet: item.content ?? '',
+    content: item.content ?? '',
+    unread: Number.isFinite(unreadCount) && unreadCount > 0 ? unreadCount : 0,
+    status: '',
+    avatar,
+    lastMessageId: item.lastMessageId ?? null,
+    sendTime,
+    clock: formatConversationClock(sendTime),
+  }
+}
+
+const setConversations = (list) => {
+  const normalized = list
+    .map((item, index) => normalizeConversation(item, index))
+    .filter(Boolean)
+    .sort((a, b) => (b.sendTime ?? 0) - (a.sendTime ?? 0))
+  conversations.value = normalized
+  if (!activeConversationId.value && normalized.length) {
+    activeConversationId.value = normalized[0].id
+  }
+}
+
+const loadConversations = async ({ force = false } = {}) => {
+  if (conversationsLoading.value) return
+  if (!force && conversations.value.length) return
+  conversationsLoading.value = true
+  try {
+    const { data } = await apiClient.get('/session/sessionList')
+    const list = Array.isArray(data) ? data : []
+    setConversations(list)
+  } catch (error) {
+    console.error('加载会话列表失败', error)
+    ElMessage.error(error?.message || '会话列表加载失败，请稍后重试')
+  } finally {
+    conversationsLoading.value = false
+  }
+}
+
+const ensureConversationsLoaded = async () => {
+  if (conversations.value.length || conversationsLoading.value) return
+  await loadConversations()
+}
+
+const highlights = computed(() =>
+  conversations.value.slice(0, 6).map((conversation) => ({
+    id: conversation.id,
+    name: conversation.displayName || conversation.nameEn || '',
+    avatar: conversation.avatar,
+  })),
+)
 
 const contacts = ref([])
 const contactsLoading = ref(false)
@@ -411,6 +452,7 @@ const handleLogout = () => {
   activeItem.value = 'profile'
   showProfileModal.value = false
   showResetPasswordModal.value = false
+  showProfileCard.value = false
   clearResetPasswordState()
   authStore.clearToken()
   ElMessage.success('已退出登录')
@@ -529,7 +571,10 @@ const searchTerm = ref('')
 const draft = ref('')
 const showFriendModal = ref(false)
 const showCreateMenu = ref(false)
+const showProfileCard = ref(false)
 const toolsRef = ref(null)
+const toolbarAvatarRef = ref(null)
+const profileCardRef = ref(null)
 const showAddFriendModal = ref(false)
 const showCreateGroupModal = ref(false)
 const isCreatingGroup = ref(false)
@@ -580,14 +625,17 @@ const searchPlaceholder = computed(() =>
 )
 
 const filteredConversations = computed(() => {
-  if (!searchTerm.value.trim()) return conversations
+  const list = Array.isArray(conversations.value) ? conversations.value : []
+  if (!searchTerm.value.trim()) return list
   const keyword = searchTerm.value.trim().toLowerCase()
-  return conversations.filter((item) => {
-    return (
-      item.nameEn.toLowerCase().includes(keyword) ||
-      item.nameCn.includes(searchTerm.value.trim()) ||
-      item.snippet.toLowerCase().includes(keyword)
-    )
+  const rawKeyword = searchTerm.value.trim()
+  return list.filter((item) => {
+    const display = (item.displayName || item.nameEn || '').toLowerCase()
+    const snippet = item.snippet ? item.snippet.toLowerCase() : ''
+    const matchesDisplay = display.includes(keyword)
+    const matchesCn = item.nameCn ? item.nameCn.includes(rawKeyword) : false
+    const matchesSnippet = snippet.includes(keyword)
+    return matchesDisplay || matchesCn || matchesSnippet
   })
 })
 const filteredContacts = computed(() => {
@@ -631,28 +679,52 @@ const selectedFriend = computed(() => {
 })
 
 const toggleCreateMenu = () => {
+  showProfileCard.value = false
   showCreateMenu.value = !showCreateMenu.value
 }
 
-const handleGlobalClick = (event) => {
-  if (!showCreateMenu.value) return
-  if (toolsRef.value && toolsRef.value.contains(event.target)) return
+const toggleProfileCard = () => {
   showCreateMenu.value = false
+  showProfileCard.value = !showProfileCard.value
+}
+
+const handleGlobalClick = (event) => {
+  const target = event.target
+  if (showCreateMenu.value) {
+    const withinTools = toolsRef.value && toolsRef.value.contains(target)
+    if (!withinTools) {
+      showCreateMenu.value = false
+    }
+  }
+  if (showProfileCard.value) {
+    const withinAvatar =
+      toolbarAvatarRef.value && toolbarAvatarRef.value.contains(target)
+    const cardEl =
+      profileCardRef.value?.$el ??
+      profileCardRef.value?.root?.value ??
+      null
+    const withinCard = cardEl && cardEl.contains(target)
+    if (!withinAvatar && !withinCard) {
+      showProfileCard.value = false
+    }
+  }
 }
 
 const selectConversation = (id) => {
   activeConversationId.value = id
   activeToolbar.value = 'conversations'
   showCreateMenu.value = false
+  showProfileCard.value = false
   showFriendModal.value = false
 }
 
 const selectedConversation = computed(() => {
-  const convo = conversations.find((item) => item.id === activeConversationId.value)
+  const list = Array.isArray(conversations.value) ? conversations.value : []
+  const convo = list.find((item) => item.id === activeConversationId.value)
   if (!convo) return null
   return {
     ...convo,
-    displayName: `${convo.nameEn}`,
+    displayName: convo.displayName || convo.nameEn || '',
   }
 })
 
@@ -663,7 +735,11 @@ const selectedThread = computed(() => {
 const selectToolbarAction = async (id) => {
   activeToolbar.value = id
   showCreateMenu.value = false
+  showProfileCard.value = false
   showAddFriendModal.value = false
+  if (id === 'conversations') {
+    await ensureConversationsLoaded()
+  }
   if (id !== 'contacts') {
     showFriendModal.value = false
   }
@@ -858,6 +934,7 @@ const handleSendMessageToFriend = () => {
 
 const handleStartGroup = async () => {
   showCreateMenu.value = false
+  showProfileCard.value = false
   await selectToolbarAction('conversations')
   await ensureFriendsLoaded()
   if (!contacts.value.length) {
@@ -917,6 +994,7 @@ const handleCreateGroupConfirm = async ({ name, memberIds, members }) => {
 
 const handleAddFriend = () => {
   showCreateMenu.value = false
+  showProfileCard.value = false
   showFriendModal.value = false
   showAddFriendModal.value = true
 }
@@ -945,6 +1023,7 @@ const onMouseUp = () => {
 
 onMounted(() => {
   window.addEventListener('click', handleGlobalClick)
+  loadConversations()
 })
 
 onBeforeUnmount(() => {
@@ -963,6 +1042,17 @@ let currentUser = reactive({
   gender: '',
   genderDesc: '',
   signature: '',
+})
+
+const hasAvatar = computed(() => !!currentUser.avatarFullUrl)
+
+const currentUserInitial = computed(() => {
+  const source =
+    currentUser.nickname ||
+    currentUser.email ||
+    ''
+  const initial = String(source).trim().charAt(0)
+  return initial ? initial.toUpperCase() : '?'
 })
 
 const normalizeGender = (value) => {
@@ -1126,19 +1216,56 @@ const handleAvatarChange = async (file) => {
 }
 
 .toolbar-avatar {
+  position: relative;
+  display: flex;
+  justify-content: center;
+}
+
+.toolbar-avatar-button {
   width: 48px;
   height: 48px;
   border-radius: 50%;
+  border: none;
+  padding: 0;
   overflow: hidden;
+  background: linear-gradient(140deg, rgba(227, 241, 232, 0.98), rgba(202, 226, 211, 0.94));
   box-shadow: 0 8px 18px rgba(32, 78, 55, 0.18);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
 }
 
-.toolbar-avatar img {
+.toolbar-avatar-button:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 12px 24px rgba(32, 78, 55, 0.22);
+}
+
+.toolbar-avatar-button:focus-visible {
+  outline: 3px solid rgba(71, 182, 124, 0.45);
+  outline-offset: 2px;
+}
+
+.toolbar-avatar-button img {
   width: 100%;
   height: 100%;
   object-fit: cover;
   display: block;
 }
+
+.toolbar-avatar-initial {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: 18px;
+  color: #2f513b;
+  background: rgba(50, 195, 116, 0.22);
+}
+
 
 .toolbar-actions {
   list-style: none;

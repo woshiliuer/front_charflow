@@ -142,7 +142,7 @@ watch(
 const selectedCount = computed(() => selectedIds.value.length)
 
 const canSubmit = computed(() => {
-  return groupName.value.trim().length > 0 && selectedIds.value.length >= 2
+  return groupName.value.trim().length > 0 && selectedIds.value.length >= 1
 })
 
 const getInitial = (friend) => {

@@ -111,6 +111,28 @@
               <p>{{ selectedResult.email || '暂无邮箱信息' }}</p>
             </div>
           </div>
+          <div class="detail-form">
+            <label class="detail-field">
+              <span class="detail-field-label">申请附言</span>
+              <textarea
+                v-model="applyMessage"
+                class="detail-textarea"
+                placeholder="写点想说的话，留给好友（选填）"
+                rows="3"
+                :disabled="isSubmitting || !!successMessage"
+              />
+            </label>
+            <label class="detail-field">
+              <span class="detail-field-label">好友备注</span>
+              <input
+                v-model="remark"
+                class="detail-input"
+                type="text"
+                placeholder="为好友设置备注名称（选填）"
+                :disabled="isSubmitting || !!successMessage"
+              />
+            </label>
+          </div>
           <button
             type="button"
             class="add-friend-action"
@@ -159,6 +181,8 @@ const errorMessage = ref('')
 const successMessage = ref('')
 const results = ref([])
 const selectedResult = ref(null)
+const applyMessage = ref('')
+const remark = ref('')
 
 const resetState = () => {
   email.value = ''
@@ -168,6 +192,8 @@ const resetState = () => {
   successMessage.value = ''
   results.value = []
   selectedResult.value = null
+  applyMessage.value = ''
+  remark.value = ''
 }
 
 watch(
@@ -229,6 +255,17 @@ const selectResult = (user) => {
   selectedResult.value = user
   successMessage.value = ''
   errorMessage.value = ''
+  const defaultMessage =
+    user.nickname || user.name
+      ? `你好，我是${user.nickname || user.name}`
+      : '你好，我想添加你为好友'
+  const defaultRemark =
+    user.nickname ||
+    user.name ||
+    user.email ||
+    '好友'
+  applyMessage.value = defaultMessage
+  remark.value = defaultRemark
 }
 
 const submitAddFriendRequest = async () => {
@@ -259,10 +296,12 @@ const submitAddFriendRequest = async () => {
     const payload = {
       receiverId,
       applyMessage:
-        selectedResult.value.nickname || selectedResult.value.name
+        applyMessage.value.trim() ||
+        (selectedResult.value.nickname || selectedResult.value.name
           ? `你好，我是${selectedResult.value.nickname || selectedResult.value.name}`
-          : '你好，我想添加你为好友',
+          : '你好，我想添加你为好友'),
       remark:
+        remark.value.trim() ||
         selectedResult.value.nickname ||
         selectedResult.value.name ||
         selectedResult.value.email ||
@@ -544,6 +583,52 @@ const submitAddFriendRequest = async () => {
   gap: 16px;
 }
 
+.detail-form {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.detail-field {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.detail-field-label {
+  font-size: 14px;
+  color: #486658;
+}
+
+.detail-input,
+.detail-textarea {
+  border: 1px solid rgba(198, 221, 207, 0.8);
+  border-radius: 14px;
+  padding: 10px 14px;
+  font-size: 14px;
+  color: #1f3526;
+  background: rgba(255, 255, 255, 0.96);
+  transition: border-color 0.18s ease, box-shadow 0.18s ease;
+  resize: none;
+}
+
+.detail-textarea {
+  min-height: 84px;
+}
+
+.detail-input:focus,
+.detail-textarea:focus {
+  outline: none;
+  border-color: #34c073;
+  box-shadow: 0 0 0 3px rgba(52, 192, 115, 0.18);
+}
+
+.detail-input:disabled,
+.detail-textarea:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
 .detail-avatar {
   width: 86px;
   height: 86px;
@@ -638,6 +723,10 @@ const submitAddFriendRequest = async () => {
     flex-direction: column;
     align-items: flex-start;
     gap: 12px;
+  }
+
+  .detail-form {
+    width: 100%;
   }
 
   .detail-avatar {
