@@ -885,7 +885,7 @@ const handleDeleteConversation = async () => {
     return
   }
   try {
-    await apiClient.post('/session/delete', { sessionId: target.id })
+    await apiClient.post('/session/deleteSession', { param: target.id })
     conversations.value = conversations.value.filter((item) => item.id !== target.id)
     if (activeConversationId.value === target.id) {
       activeConversationId.value = conversations.value[0]?.id ?? null
