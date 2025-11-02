@@ -5,6 +5,7 @@
       :key="item.id"
       :class="{ active: item.id === activeConversationId }"
       @click="handleSelect(item.id)"
+      @contextmenu.prevent="handleContextMenu(item, $event)"
     >
       <div class="avatar">
         <img :src="item.avatar" :alt="item.nameEn" />
@@ -35,9 +36,12 @@ const props = defineProps({
     default: null,
   },
 })
-const emit = defineEmits(['select'])
+const emit = defineEmits(['select', 'context'])
 const handleSelect = (conversationId) => {
   emit('select', conversationId)
+}
+const handleContextMenu = (item, event) => {
+  emit('context', { item, event })
 }
 </script>
 <style scoped>

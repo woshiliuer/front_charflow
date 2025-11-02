@@ -82,6 +82,7 @@
         :conversations="filteredConversations"
         :active-conversation-id="activeConversationId"
         @select="selectConversation"
+        @context="handleConversationContextMenu"
       />
       <ContactsDirectory
         v-else-if="activeToolbar === 'contacts'"
@@ -176,6 +177,23 @@
       @confirm="confirmRejectFriendRequest"
     />
 
+    <ul
+      v-if="conversationMenu.visible"
+      class="conversation-context-menu"
+      :style="{ top: conversationMenu.y + 'px', left: conversationMenu.x + 'px' }"
+      ref="conversationMenuRef"
+    >
+      <li>
+        <button type="button" @click="handleMarkFavoriteConversation">
+          {{ conversationMenuTarget?.isFavorite ? '取消常用会话' : '设置为常用会话' }}
+        </button>
+      </li>
+      <li>
+        <button type="button" class="danger" @click="handleDeleteConversation">
+          删除会话
+        </button>
+      </li>
+    </ul>
   </div>
 </template>
 
@@ -253,6 +271,9 @@ const normalizeConversation = (item, index) => {
   const sendTime = parseTimestamp(item.sendTime)
   const unreadCount = Number(item.unreadCount)
   const avatar = item.avatarFullUrl || DEFAULT_AVATAR_URL
+  const statusValue = Number(item.status)
+  const statusCode = Number.isFinite(statusValue) ? statusValue : 1
+  const favoriteFlag = statusCode === 3
 
   return {
     id,
@@ -263,9 +284,11 @@ const normalizeConversation = (item, index) => {
     content: item.content ?? '',
     unread: Number.isFinite(unreadCount) && unreadCount > 0 ? unreadCount : 0,
     status: '',
+    statusCode,
     avatar,
     lastMessageId: item.lastMessageId ?? null,
     sendTime,
+    isFavorite: favoriteFlag,
     clock: formatConversationClock(sendTime),
   }
 }
@@ -274,7 +297,13 @@ const setConversations = (list) => {
   const normalized = list
     .map((item, index) => normalizeConversation(item, index))
     .filter(Boolean)
-    .sort((a, b) => (b.sendTime ?? 0) - (a.sendTime ?? 0))
+    .sort((a, b) => {
+      const favoriteDelta = Number(b.isFavorite) - Number(a.isFavorite)
+      if (favoriteDelta !== 0) {
+        return favoriteDelta
+      }
+      return (b.sendTime ?? 0) - (a.sendTime ?? 0)
+    })
   conversations.value = normalized
   if (!activeConversationId.value && normalized.length) {
     activeConversationId.value = normalized[0].id
@@ -302,13 +331,31 @@ const ensureConversationsLoaded = async () => {
   await loadConversations()
 }
 
-const highlights = computed(() =>
-  conversations.value.slice(0, 6).map((conversation) => ({
-    id: conversation.id,
-    name: conversation.displayName || conversation.nameEn || '',
-    avatar: conversation.avatar,
-  })),
-)
+const highlights = computed(() => {
+  const list = Array.isArray(conversations.value) ? conversations.value : []
+  return list
+    .filter((conversation) => conversation.isFavorite)
+    .slice(0, 6)
+    .map((conversation) => ({
+      id: conversation.id,
+      name: conversation.displayName || conversation.nameEn || '',
+      avatar: conversation.avatar,
+    }))
+})
+
+const conversationMenu = reactive({
+  visible: false,
+  x: 0,
+  y: 0,
+  conversationId: null,
+})
+
+const conversationMenuRef = ref(null)
+
+const conversationMenuTarget = computed(() => {
+  const list = Array.isArray(conversations.value) ? conversations.value : []
+  return list.find((item) => item.id === conversationMenu.conversationId) || null
+})
 
 const contacts = ref([])
 const contactsLoading = ref(false)
@@ -681,11 +728,13 @@ const selectedFriend = computed(() => {
 const toggleCreateMenu = () => {
   showProfileCard.value = false
   showCreateMenu.value = !showCreateMenu.value
+  closeConversationMenu()
 }
 
 const toggleProfileCard = () => {
   showCreateMenu.value = false
   showProfileCard.value = !showProfileCard.value
+  closeConversationMenu()
 }
 
 const handleGlobalClick = (event) => {
@@ -708,6 +757,52 @@ const handleGlobalClick = (event) => {
       showProfileCard.value = false
     }
   }
+  if (conversationMenu.visible) {
+    const menuEl = conversationMenuRef.value
+    const withinMenu = menuEl && menuEl.contains(target)
+    if (!withinMenu) {
+      closeConversationMenu()
+    }
+  }
+}
+
+function adjustMenuPosition(clientX, clientY) {
+  const padding = 12
+  const estimatedWidth = 180
+  const estimatedHeight = 96
+  let x = clientX
+  let y = clientY
+  if (x + estimatedWidth + padding > window.innerWidth) {
+    x = window.innerWidth - estimatedWidth - padding
+  }
+  if (y + estimatedHeight + padding > window.innerHeight) {
+    y = window.innerHeight - estimatedHeight - padding
+  }
+  return {
+    x: Math.max(padding, x),
+    y: Math.max(padding, y),
+  }
+}
+
+function openConversationMenu(conversation, event) {
+  if (!conversation) return
+  const { clientX, clientY } = event
+  const { x, y } = adjustMenuPosition(clientX, clientY)
+  conversationMenu.visible = true
+  conversationMenu.x = x
+  conversationMenu.y = y
+  conversationMenu.conversationId = conversation.id
+  activeConversationId.value = conversation.id
+}
+
+function closeConversationMenu() {
+  conversationMenu.visible = false
+  conversationMenu.conversationId = null
+}
+
+function handleConversationContextMenu({ item, event }) {
+  if (!event || !item) return
+  openConversationMenu(item, event)
 }
 
 const selectConversation = (id) => {
@@ -716,6 +811,7 @@ const selectConversation = (id) => {
   showCreateMenu.value = false
   showProfileCard.value = false
   showFriendModal.value = false
+  closeConversationMenu()
 }
 
 const selectedConversation = computed(() => {
@@ -737,6 +833,7 @@ const selectToolbarAction = async (id) => {
   showCreateMenu.value = false
   showProfileCard.value = false
   showAddFriendModal.value = false
+  closeConversationMenu()
   if (id === 'conversations') {
     await ensureConversationsLoaded()
   }
@@ -754,6 +851,51 @@ const selectToolbarAction = async (id) => {
       activeFriendId.value = filteredContacts.value[0].id
     }
     loadFriendRequests()
+  }
+}
+
+const handleMarkFavoriteConversation = async () => {
+  const target = conversationMenuTarget.value
+  if (!target) {
+    closeConversationMenu()
+    return
+  }
+  const nextFavorite = !target.isFavorite
+  const endpoint = nextFavorite ? '/session/setFavorite' : '/session/cancelFavorite'
+  try {
+    const { message } = await apiClient.post(endpoint, {
+      param: target.id,
+    })
+    target.isFavorite = nextFavorite
+    target.statusCode = nextFavorite ? 3 : 1
+    ElMessage.success(message || (nextFavorite ? '已设置为常用会话' : '已取消常用会话'))
+    await loadConversations({ force: true })
+  } catch (error) {
+    console.error('设置常用会话失败', error)
+    ElMessage.error(error?.message || '操作失败，请稍后重试')
+  } finally {
+    closeConversationMenu()
+  }
+}
+
+const handleDeleteConversation = async () => {
+  const target = conversationMenuTarget.value
+  if (!target) {
+    closeConversationMenu()
+    return
+  }
+  try {
+    await apiClient.post('/session/delete', { sessionId: target.id })
+    conversations.value = conversations.value.filter((item) => item.id !== target.id)
+    if (activeConversationId.value === target.id) {
+      activeConversationId.value = conversations.value[0]?.id ?? null
+    }
+    ElMessage.success('会话已删除')
+  } catch (error) {
+    console.error('删除会话失败', error)
+    ElMessage.error(error?.message || '删除会话失败，请稍后重试')
+  } finally {
+    closeConversationMenu()
   }
 }
 
@@ -1264,6 +1406,49 @@ const handleAvatarChange = async (file) => {
   font-size: 18px;
   color: #2f513b;
   background: rgba(50, 195, 116, 0.22);
+}
+
+.conversation-context-menu {
+  position: fixed;
+  z-index: 1200;
+  list-style: none;
+  margin: 0;
+  padding: 6px 0;
+  background: #ffffff;
+  border: 1px solid #dbe7dc;
+  border-radius: 10px;
+  box-shadow: 0 18px 32px rgba(32, 53, 39, 0.18);
+  min-width: 168px;
+}
+
+.conversation-context-menu li {
+  margin: 0;
+}
+
+.conversation-context-menu button {
+  width: 100%;
+  padding: 10px 18px;
+  background: transparent;
+  border: none;
+  text-align: left;
+  font-size: 14px;
+  color: #274531;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.conversation-context-menu button:hover {
+  background: rgba(73, 160, 112, 0.12);
+  color: #1f3526;
+}
+
+.conversation-context-menu button.danger {
+  color: #c14141;
+}
+
+.conversation-context-menu button.danger:hover {
+  background: rgba(231, 92, 92, 0.12);
+  color: #a92f2f;
 }
 
 
