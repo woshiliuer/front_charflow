@@ -116,7 +116,7 @@
       :current-user="currentUser"
       :draft="draft"
       @update:draft="(v) => (draft = v)"
-      @send="() => {}"
+      @send="handleSendMessage"
     />
     <BrandShowcase v-else />
     <UserProfilePanel
@@ -211,6 +211,7 @@ import ProfilePopover from '@/components/profile/ProfilePopover.vue'
 import { apiClient } from '@/services/apiClient'
 import { fetchNormalizedFriends } from '@/services/friendService'
 import { requestPasswordResetCode, recoverPassword } from '@/services/passwordRecovery'
+import { sendMessage as sendMessageAPI } from '@/services/messageService'
 import SettingsPanel from '@/components/settings/SettingsPanel.vue'
 import ConversationArea from '@/components/chat/ConversationArea.vue'
 import UserProfilePanel from '@/components/settings/UserProfilePanel.vue'
@@ -219,6 +220,7 @@ import BrandShowcase from '@/components/common/BrandShowcase.vue'
 import { useAuthStore } from '@/stores/auth'
 import { ElMessage } from 'element-plus'
 import 'element-plus/es/components/message/style/css'
+import { useChatWebSocket } from '@/composables/useChatWebSocket'
 
 const router = useRouter()
 const authStore = useAuthStore()
@@ -308,6 +310,17 @@ const setConversations = (list) => {
   if (!activeConversationId.value && normalized.length) {
     activeConversationId.value = normalized[0].id
   }
+}
+
+// 重新排序会话列表（保持置顶会话在前，其他按时间排序）
+const sortConversations = () => {
+  conversations.value.sort((a, b) => {
+    const favoriteDelta = Number(b.isFavorite) - Number(a.isFavorite)
+    if (favoriteDelta !== 0) {
+      return favoriteDelta
+    }
+    return (b.sendTime ?? 0) - (a.sendTime ?? 0)
+  })
 }
 
 const loadConversations = async ({ force = false } = {}) => {
@@ -492,7 +505,6 @@ const handleSelect = (id) => {
   if (id !== 'account') {
     clearResetPasswordState()
   }
-  console.log('选择了条目：', id)
 }
 
 const handleLogout = () => {
@@ -511,8 +523,250 @@ const handleLogout = () => {
 const messagesByConversation = ref({})
 const messagesLoading = ref(false)
 
-
+// 先定义需要用到的 ref
 const activeConversationId = ref(null)
+
+// 处理接收到的消息
+const handleReceivedMessage = (message) => {
+  const conversationId = message.conversationId || message.sessionId || message.to || message.from
+  
+  if (!conversationId) {
+    console.warn('无法确定会话ID，忽略消息:', message)
+    return
+  }
+
+  const isFromMe = String(message.from) === String(currentUser.id)
+  
+  // 如果是当前查看的会话，直接添加消息
+  if (activeConversationId.value && (
+    activeConversationId.value === Number(conversationId) || 
+    String(activeConversationId.value) === String(conversationId)
+  )) {
+    addMessageToThread(conversationId, message, isFromMe)
+  } else {
+    // 否则更新会话列表（只有别人发来的消息才增加未读）
+    if (!isFromMe) {
+      updateConversationWithNewMessage(conversationId, message)
+    }
+  }
+}
+
+// 添加消息到线程
+const addMessageToThread = (conversationId, message, isFromMe) => {
+  if (!messagesByConversation.value[conversationId]) {
+    messagesByConversation.value[conversationId] = []
+  }
+  
+  const conversation = conversations.value.find((conv) => 
+    String(conv.id) === String(conversationId)
+  )
+  const contactName = conversation?.displayName || conversation?.nameEn || '对方'
+  
+  const role = isFromMe ? 'self' : 'contact'
+  const author = isFromMe ? '我' : contactName
+  
+  // 检查是否已存在（去重）
+  // 1. 优先通过 sequence 匹配
+  // 2. 其次通过 id 匹配
+  // 3. 如果是自己发送的消息，通过文本内容和时间匹配（去重乐观更新的消息）
+  const messageText = message.text || message.content || ''
+  const messageTime = message.sendTime || Date.now()
+  
+  const existingMessage = messagesByConversation.value[conversationId].find((msg) => {
+    // 通过 sequence 匹配
+    if (message.sequence && msg.sequence) {
+      return msg.sequence === message.sequence
+    }
+    // 通过 id 匹配
+    if (message.id && msg.id) {
+      return String(msg.id) === String(message.id)
+    }
+    // 如果是自己发送的消息，通过文本和时间匹配（用于去重乐观更新的消息）
+    if (isFromMe && msg.role === 'self' && msg.text === messageText) {
+      // 检查时间差在 5 秒内，认为是同一条消息
+      const timeDiff = Math.abs((msg.sendTime || 0) - messageTime)
+      if (timeDiff < 5000) {
+        return true
+      }
+    }
+    return false
+  })
+  
+  if (existingMessage) {
+    // 如果找到已存在的消息，更新它而不是添加新的
+    if (message.status !== undefined) {
+      existingMessage.status = message.status
+    }
+    // 更新其他字段
+    if (message.id && !existingMessage.id) {
+      existingMessage.id = message.id
+    }
+    if (message.sequence && !existingMessage.sequence) {
+      existingMessage.sequence = message.sequence
+    }
+    if (message.sendTime && message.sendTime > existingMessage.sendTime) {
+      existingMessage.sendTime = message.sendTime
+      existingMessage.time = formatMessageTime(message.sendTime)
+    }
+    return
+  }
+  
+  const newMessage = {
+    id: message.id || message.sequence || Date.now(),
+    role,
+    author,
+    text: message.text || message.content || '',
+    time: formatMessageTime(message.sendTime || Date.now()),
+    sendTime: message.sendTime || Date.now(),
+    sequence: message.sequence,
+    status: message.status !== undefined ? message.status : 1,
+  }
+  
+  messagesByConversation.value[conversationId].push(newMessage)
+  
+  // 排序
+  messagesByConversation.value[conversationId].sort((a, b) => {
+    if (a.sequence && b.sequence) {
+      return a.sequence - b.sequence
+    }
+    if (a.sendTime && b.sendTime) {
+      return a.sendTime - b.sendTime
+    }
+    return 0
+  })
+}
+
+// 更新会话的新消息提示
+const updateConversationWithNewMessage = (conversationId, message) => {
+  const conversation = conversations.value.find((conv) => 
+    String(conv.id) === String(conversationId) || Number(conv.id) === Number(conversationId)
+  )
+  
+  if (conversation) {
+    const isFromMe = String(message.from) === String(currentUser.id)
+    if (!isFromMe) {
+      conversation.unread = (conversation.unread || 0) + 1
+    }
+    
+    conversation.snippet = message.text || message.content || ''
+    conversation.content = message.text || message.content || ''
+    conversation.sendTime = message.sendTime || Date.now()
+    conversation.clock = formatConversationClock(conversation.sendTime)
+    
+    // 缓存消息
+    if (!messagesByConversation.value[conversationId]) {
+      messagesByConversation.value[conversationId] = []
+    }
+    addMessageToThread(conversationId, message, isFromMe)
+    
+    // 重新排序会话列表（新消息的会话应该排在前面）
+    sortConversations()
+  }
+}
+
+// WebSocket 连接
+const { isConnected, connect, disconnect, sendMessage } = useChatWebSocket({
+  currentUserId: computed(() => currentUser.id),
+  conversations,
+  activeConversationId,
+  messagesByConversation,
+  onMessageReceived: handleReceivedMessage,
+  onSystemMessage: (message) => {
+    if (message.msg) {
+      ElMessage.info(message.msg)
+    }
+  },
+})
+
+// 发送消息
+const handleSendMessage = async () => {
+  if (!draft.value.trim() || !activeConversationId.value) {
+    return
+  }
+  
+  const conversationId = activeConversationId.value
+  const conversation = conversations.value.find((conv) => conv.id === conversationId)
+  if (!conversation) {
+    ElMessage.warning('会话不存在')
+    return
+  }
+  
+  const messageText = draft.value.trim()
+  
+  // 获取对方用户ID（优先使用会话中的targetUserId，否则使用会话ID）
+  const targetUserId = conversation.targetUserId || conversation.friendId || conversation.userId || conversationId
+  
+  // 乐观更新：立即显示在UI中
+  const tempId = `temp_${Date.now()}`
+  const tempMessage = {
+    id: tempId,
+    role: 'self',
+    author: '我',
+    text: messageText,
+    time: formatMessageTime(Date.now()),
+    sendTime: Date.now(),
+    sequence: null,
+    status: 0, // 发送中
+  }
+  
+  if (!messagesByConversation.value[conversationId]) {
+    messagesByConversation.value[conversationId] = []
+  }
+  messagesByConversation.value[conversationId].push(tempMessage)
+  
+  // 清空输入框
+  const originalDraft = draft.value
+  draft.value = ''
+  
+  try {
+    // 调用REST API发送消息（receiverId不再需要，后端会通过conversationId自动查询所有参与者）
+    const response = await sendMessageAPI({
+      conversationId: conversationId,
+      content: messageText,
+      messageType: 1, // 文本消息
+    })
+    
+    console.log('[ChatBreeze] Message sent successfully:', response)
+    
+    // 更新临时消息的状态为已发送
+    const messageIndex = messagesByConversation.value[conversationId].findIndex(
+      (msg) => msg.id === tempId
+    )
+    if (messageIndex !== -1) {
+      messagesByConversation.value[conversationId][messageIndex].status = 1
+      // 更新服务器返回的真实ID和sequence
+      if (response.id) {
+        messagesByConversation.value[conversationId][messageIndex].id = response.id
+      }
+      if (response.sequence) {
+        messagesByConversation.value[conversationId][messageIndex].sequence = response.sequence
+      }
+    }
+    
+    // 更新会话列表的最新消息
+    conversation.snippet = messageText
+    conversation.content = messageText
+    conversation.sendTime = Date.now()
+    conversation.clock = formatConversationClock(conversation.sendTime)
+    
+    // 重新排序会话列表（发送消息的会话应该排在前面）
+    sortConversations()
+    
+  } catch (error) {
+    console.error('[ChatBreeze] Failed to send message:', error)
+    ElMessage.error(error?.message || '消息发送失败，请重试')
+    
+    // 发送失败，标记消息状态为失败（-1），并恢复输入框内容
+    const messageIndex = messagesByConversation.value[conversationId].findIndex(
+      (msg) => msg.id === tempId
+    )
+    if (messageIndex !== -1) {
+      messagesByConversation.value[conversationId][messageIndex].status = -1
+    }
+    draft.value = originalDraft
+  }
+}
+
 const activeFriendId = ref(null)
 const activeToolbar = ref('conversations')
 const sidebarWidth = ref(320)
@@ -825,6 +1079,20 @@ const selectConversation = async (id) => {
   closeConversationMenu()
   // 加载该会话的消息列表
   await loadMessages(id)
+  
+  // 标记该会话的消息为已读
+  try {
+    await apiClient.post('/message/markAsRead', { conversationId: id })
+    console.log('[ChatBreeze] Marked conversation as read:', id)
+    
+    // 更新本地会话的未读数为0
+    const conversation = conversations.value.find((conv) => conv.id === id)
+    if (conversation) {
+      conversation.unread = 0
+    }
+  } catch (error) {
+    console.error('[ChatBreeze] Failed to mark conversation as read:', error)
+  }
 }
 
 const selectedConversation = computed(() => {
@@ -1176,9 +1444,24 @@ const onMouseUp = () => {
   window.removeEventListener('mouseup', onMouseUp)
 }
 
-onMounted(() => {
+onMounted(async () => {
   window.addEventListener('click', handleGlobalClick)
-  loadConversations()
+  // 先获取用户信息
+  await getUserInfo()
+  console.log('[ChatBreeze] User info loaded, user ID:', currentUser.id)
+  // 加载会话列表
+  await loadConversations()
+  // 初始化 WebSocket 连接
+  if (currentUser.id) {
+    console.log('[ChatBreeze] Attempting to connect WebSocket...')
+    try {
+      await connect()
+    } catch (error) {
+      console.error('[ChatBreeze] Failed to connect WebSocket:', error)
+    }
+  } else {
+    console.warn('[ChatBreeze] Cannot connect WebSocket: user ID is missing')
+  }
 })
 
 onBeforeUnmount(() => {
@@ -1186,6 +1469,8 @@ onBeforeUnmount(() => {
   window.removeEventListener('mouseup', onMouseUp)
   window.removeEventListener('click', handleGlobalClick)
   clearResetPasswordState()
+  // 断开 WebSocket 连接
+  disconnect()
 })
 
 let currentUser = reactive({

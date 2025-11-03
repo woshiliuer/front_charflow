@@ -14,6 +14,9 @@ export default defineConfig(({ mode }) => {
     plugins: [
       vue()
     ],
+    define: {
+      global: 'globalThis',
+    },
     resolve: {
       alias: {
         '@': fileURLToPath(new URL('./src', import.meta.url))
@@ -30,7 +33,13 @@ export default defineConfig(({ mode }) => {
               const rewritten = path.slice(apiProxyPath.length)
               return rewritten.startsWith('/') ? rewritten : `/${rewritten}`
             },
-          }
+          },
+          // WebSocket 代理
+          '/ws': {
+            target: apiBaseUrl,
+            ws: true,
+            changeOrigin: true,
+          },
         }
         : undefined,
     },
