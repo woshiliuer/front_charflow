@@ -507,104 +507,9 @@ const handleLogout = () => {
 }
 
 
-const threads = {
-  "1": [
-    {
-      id: 1,
-      role: "contact",
-      author: "Sarah Johnson",
-      text: "嗨，今天的进度怎么样？",
-      time: "14:25",
-    },
-    {
-      id: 2,
-      role: "self",
-      author: "我",
-      text: "状态我这边在更新，信息片段稍后发给你。",
-      time: "14:27",
-    },
-  ],
-  "2": [
-    {
-      id: 1,
-      role: "contact",
-      author: "设计团队",
-      text: "新的配色方案已经发到群邮件。",
-      time: "13:40",
-    },
-    {
-      id: 2,
-      role: "self",
-      author: "我",
-      text: "收到，我会在今天前审阅，谢谢。",
-      time: "13:42",
-    },
-  ],
-  "3": [
-    {
-      id: 1,
-      role: "contact",
-      author: "Mike Chen",
-      text: "数据集已经上传到云端。",
-      time: "12:20",
-    },
-    {
-      id: 2,
-      role: "self",
-      author: "我",
-      text: "好的，稍后我去查看。",
-      time: "12:22",
-    },
-  ],
-  "4": [
-    {
-      id: 1,
-      role: "contact",
-      author: "项目Alpha",
-      text: "今天下午有一个同步会议。",
-      time: "11:30",
-    },
-    {
-      id: 2,
-      role: "self",
-      author: "我",
-      text: "明白，我会提前十分钟准备。",
-      time: "11:33",
-    },
-  ],
-  "5": [
-    {
-      id: 1,
-      role: "contact",
-      author: "Emma Wilson",
-      text: "麻烦看看 PRD 的最新版本。",
-      time: "10:15",
-    },
-    {
-      id: 2,
-      role: "self",
-      author: "我",
-      text: "谢谢，我会尽快反馈意见。",
-      time: "10:18",
-    },
-  ],
-  "6": [
-    {
-      id: 1,
-      role: "contact",
-      author: "开发团队",
-      text: "Bug 修复已经上线，请关注回归。",
-      time: "昨天 20:05",
-    },
-    {
-      id: 2,
-      role: "self",
-      author: "我",
-      text: "收到，如有异常我会第一时间报告。",
-      time: "昨天 20:10",
-    },
-  ],
-};
+// 存储每个会话的消息列表，key为会话ID
+const messagesByConversation = ref({})
+const messagesLoading = ref(false)
 
 
 const activeConversationId = ref(null)
@@ -640,6 +545,16 @@ watch(
   (length) => {
     if (length > 0 && !activeFriendId.value) {
       activeFriendId.value = contacts.value[0].id
+    }
+  },
+)
+
+// 监听activeConversationId变化，自动加载消息
+watch(
+  () => activeConversationId.value,
+  (newId) => {
+    if (newId) {
+      loadMessages(newId)
     }
   },
 )
@@ -805,13 +720,111 @@ function handleConversationContextMenu({ item, event }) {
   openConversationMenu(item, event)
 }
 
-const selectConversation = (id) => {
+// 格式化时间戳为显示时间
+const formatMessageTime = (timestamp) => {
+  if (!timestamp || !Number.isFinite(Number(timestamp))) return ''
+  let ms = Number(timestamp)
+  if (ms < 1e12) {
+    ms *= 1000
+  }
+  const date = new Date(ms)
+  if (Number.isNaN(date.getTime())) return ''
+  const now = new Date()
+  const sameDay = date.toDateString() === now.toDateString()
+  if (sameDay) {
+    return date.toLocaleTimeString('zh-CN', {
+      hour12: false,
+      hour: '2-digit',
+      minute: '2-digit',
+    })
+  }
+  const yesterday = new Date(now)
+  yesterday.setDate(yesterday.getDate() - 1)
+  const isYesterday = date.toDateString() === yesterday.toDateString()
+  if (isYesterday) {
+    return `昨天 ${date.toLocaleTimeString('zh-CN', {
+      hour12: false,
+      hour: '2-digit',
+      minute: '2-digit',
+    })}`
+  }
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const day = String(date.getDate()).padStart(2, '0')
+  return `${month}-${day} ${date.toLocaleTimeString('zh-CN', {
+    hour12: false,
+    hour: '2-digit',
+    minute: '2-digit',
+  })}`
+}
+
+// 加载消息列表
+const loadMessages = async (conversationId) => {
+  if (!conversationId || messagesLoading.value) return
+  // 如果已经有缓存，不再重复加载
+  if (messagesByConversation.value[conversationId]) return
+  
+  messagesLoading.value = true
+  try {
+    const { data } = await apiClient.post('/message/messageList', {
+      param: conversationId,
+    })
+    const messageList = Array.isArray(data) ? data : []
+    
+    // 获取会话信息用于显示对方名称
+    const conversation = conversations.value.find((conv) => conv.id === conversationId)
+    const contactName = conversation?.displayName || conversation?.nameEn || '对方'
+    
+    // 转换消息格式：只处理文本消息（messageType === 1）
+    const convertedMessages = messageList
+      .filter((msg) => Number(msg.messageType) === 1) // 只处理文本消息
+      .map((msg, index) => {
+        const direction = Number(msg.direction)
+        // direction: 1=USER_TO_FRIEND(我发出的), 2=FRIEND_TO_USER(收到的)
+        const role = direction === 1 ? 'self' : 'contact'
+        const author = role === 'self' ? '我' : contactName
+        
+        return {
+          id: msg.sequence || index + 1,
+          role,
+          author,
+          text: msg.content || '',
+          time: formatMessageTime(msg.sendTime),
+          sendTime: msg.sendTime,
+          sequence: msg.sequence,
+          status: msg.status,
+        }
+      })
+    
+    // 按时间排序（如果sequence不可用，使用sendTime）
+    convertedMessages.sort((a, b) => {
+      if (a.sequence && b.sequence) {
+        return a.sequence - b.sequence
+      }
+      if (a.sendTime && b.sendTime) {
+        return a.sendTime - b.sendTime
+      }
+      return 0
+    })
+    
+    messagesByConversation.value[conversationId] = convertedMessages
+  } catch (error) {
+    console.error('加载消息列表失败', error)
+    ElMessage.error(error?.message || '加载消息列表失败，请稍后重试')
+    messagesByConversation.value[conversationId] = []
+  } finally {
+    messagesLoading.value = false
+  }
+}
+
+const selectConversation = async (id) => {
   activeConversationId.value = id
   activeToolbar.value = 'conversations'
   showCreateMenu.value = false
   showProfileCard.value = false
   showFriendModal.value = false
   closeConversationMenu()
+  // 加载该会话的消息列表
+  await loadMessages(id)
 }
 
 const selectedConversation = computed(() => {
@@ -826,7 +839,7 @@ const selectedConversation = computed(() => {
 
 const selectedThread = computed(() => {
   if (!activeConversationId.value) return []
-  return threads[activeConversationId.value] || []
+  return messagesByConversation.value[activeConversationId.value] || []
 })
 const selectToolbarAction = async (id) => {
   activeToolbar.value = id
