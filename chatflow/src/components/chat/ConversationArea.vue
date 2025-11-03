@@ -25,10 +25,22 @@
     </main>
 
     <section v-else class="conversation-view">
-      <header>
+      <header class="conversation-header">
         <div class="title">
           <h2>{{ selectedConversation.displayName }}</h2>
         </div>
+        <button
+          v-if="selectedConversation"
+          type="button"
+          class="settings-button"
+          @click="openSettingsDrawer"
+          aria-haspopup="dialog"
+          aria-label="会话设置"
+        >
+          <span class="dot"></span>
+          <span class="dot"></span>
+          <span class="dot"></span>
+        </button>
       </header>
 
       <ul class="message-list">
@@ -58,12 +70,30 @@
         />
         <button type="button" @click="emitSend">发送</button>
       </footer>
+      <ConversationSettingsDrawer
+        :visible="showSettingsDrawer"
+        :conversation="selectedConversation"
+        :is-muted="isMuted"
+        :is-favorite="isFavorite"
+        :invite-enabled="propsInviteEnabled"
+        :group-name-editable="selectedConversation?.isGroupConversation"
+        :announcement-updated-at="selectedConversation?.announcementUpdatedAt"
+        @close="handleDrawerClose"
+        @toggle-mute="handleToggleMute"
+        @toggle-favorite="handleToggleFavorite"
+        @delete="handleDrawerDelete"
+        @leave-group="handleDrawerLeaveGroup"
+        @invite="handleInviteMembers"
+        @update-group-name="handleUpdateGroupName"
+        @edit-announcement="handleEditAnnouncement"
+      />
     </section>
   </section>
 </template>
 
 <script setup>
-import { ref, watch } from 'vue'
+import { ref, watch, computed } from 'vue'
+import ConversationSettingsDrawer from './ConversationSettingsDrawer.vue'
 
 const props = defineProps({
   highlights: { type: Array, required: true },
@@ -71,11 +101,23 @@ const props = defineProps({
   selectedThread: { type: Array, default: () => [] },
   currentUser: { type: Object, required: true },
   draft: { type: String, default: '' },
+  inviteEnabled: { type: Boolean, default: false },
 })
 
-const emit = defineEmits(['update:draft', 'send'])
+const emit = defineEmits([
+  'update:draft',
+  'send',
+  'toggle-mute',
+  'toggle-favorite',
+  'delete-conversation',
+  'leave-group',
+  'invite-members',
+  'update-group-name',
+  'edit-announcement',
+])
 
 const localDraft = ref(props.draft)
+const showSettingsDrawer = ref(false)
 
 watch(
   () => props.draft,
@@ -93,6 +135,58 @@ const handleInput = () => {
 const emitSend = () => {
   emit('send')
 }
+
+const isMuted = computed(() => Boolean(props.selectedConversation?.isMuted))
+const isFavorite = computed(() => Boolean(props.selectedConversation?.isFavorite))
+
+const openSettingsDrawer = () => {
+  if (props.selectedConversation) {
+    showSettingsDrawer.value = true
+  }
+}
+
+const handleDrawerClose = () => {
+  showSettingsDrawer.value = false
+}
+
+const handleToggleMute = (nextValue) => {
+  emit('toggle-mute', nextValue)
+}
+
+const handleToggleFavorite = (nextValue) => {
+  emit('toggle-favorite', nextValue)
+}
+
+const handleDrawerDelete = () => {
+  emit('delete-conversation')
+}
+
+const handleDrawerLeaveGroup = () => {
+  emit('leave-group')
+}
+
+const propsInviteEnabled = computed(() => Boolean(props.inviteEnabled))
+
+const handleInviteMembers = () => {
+  if (propsInviteEnabled.value) {
+    emit('invite-members')
+  }
+}
+
+const handleUpdateGroupName = (value) => {
+  emit('update-group-name', value)
+}
+
+const handleEditAnnouncement = () => {
+  emit('edit-announcement')
+}
+
+watch(
+  () => props.selectedConversation?.id,
+  () => {
+    showSettingsDrawer.value = false
+  },
+)
 </script>
 
 <style scoped>
@@ -218,6 +312,13 @@ const emitSend = () => {
   color: #2b4738;
 }
 
+.conversation-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 32px;
+}
+
 .conversation-view header .title {
   display: flex;
   align-items: baseline;
@@ -239,6 +340,35 @@ const emitSend = () => {
   margin: 12px 0 0;
   color: #58725f;
   font-size: 14px;
+}
+
+.settings-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  width: 32px;
+  height: 32px;
+  border: none;
+  padding: 4px;
+  background: transparent;
+  cursor: pointer;
+  transition: transform 0.2s ease;
+}
+
+.settings-button:hover {
+  transform: translateY(-1px);
+}
+
+.settings-button:active {
+  transform: translateY(0);
+}
+
+.settings-button .dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: #1c3325;
 }
 
 .message-list {

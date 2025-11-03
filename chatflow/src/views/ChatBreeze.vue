@@ -115,8 +115,16 @@
       :selected-thread="selectedThread"
       :current-user="currentUser"
       :draft="draft"
+      :invite-enabled="canInviteGroupMembers"
       @update:draft="(v) => (draft = v)"
       @send="handleSendMessage"
+      @toggle-mute="handleToggleConversationMute"
+      @toggle-favorite="handleToggleConversationFavorite"
+      @delete-conversation="handleDeleteConversationFromDrawer"
+      @leave-group="handleLeaveGroupFromDrawer"
+      @invite-members="handleInviteMembers"
+      @update-group-name="handleUpdateConversationGroupName"
+      @edit-announcement="handleEditAnnouncement"
     />
     <BrandShowcase v-else />
     <UserProfilePanel
@@ -159,6 +167,20 @@
       :submitting="isCreatingGroup"
       @close="closeCreateGroupModal"
       @confirm="handleCreateGroupConfirm"
+    />
+    <GroupInviteModal
+      :visible="showGroupInviteModal"
+      :friends="groupInviteCandidates"
+      @close="closeGroupInviteModal"
+      @confirm="handleInviteMembersConfirm"
+    />
+    <GroupAnnouncementModal
+      :visible="showAnnouncementModal"
+      :content="selectedConversationEntity?.announcement || ''"
+      :updated-at="selectedConversationEntity?.announcementUpdatedAt"
+      :saving="savingAnnouncement"
+      @close="closeAnnouncementModal"
+      @save="handleSaveAnnouncement"
     />
     <FriendRemarkModal
       :visible="showApproveRemarkModal"
@@ -207,6 +229,8 @@ import CreateGroupModal from '@/components/chat/CreateGroupModal.vue'
 import FriendRemarkModal from '@/components/chat/FriendRemarkModal.vue'
 import FriendDetailModal from '@/components/chat/FriendDetailModal.vue'
 import RejectFriendModal from '@/components/chat/RejectFriendModal.vue'
+import GroupInviteModal from '@/components/chat/GroupInviteModal.vue'
+import GroupAnnouncementModal from '@/components/chat/GroupAnnouncementModal.vue'
 import ProfilePopover from '@/components/profile/ProfilePopover.vue'
 import { apiClient } from '@/services/apiClient'
 import { fetchNormalizedFriends } from '@/services/friendService'
@@ -227,6 +251,10 @@ const authStore = useAuthStore()
 
 const conversations = ref([])
 const conversationsLoading = ref(false)
+const conversationMuteState = reactive({})
+const showGroupInviteModal = ref(false)
+const showAnnouncementModal = ref(false)
+const savingAnnouncement = ref(false)
 
 const DEFAULT_AVATAR_URL =
   'https://chat-flow.oss-cn-guangzhou.aliyuncs.com/default-avatar/default-person.jpg'
@@ -276,6 +304,28 @@ const normalizeConversation = (item, index) => {
   const statusValue = Number(item.status)
   const statusCode = Number.isFinite(statusValue) ? statusValue : 1
   const favoriteFlag = statusCode === 3
+  const conversationTypeRaw = Number(item.conversationType)
+  const conversationType = Number.isFinite(conversationTypeRaw) ? conversationTypeRaw : 1
+  const isGroupConversation = conversationType === 2
+  const muteSource =
+    item.isMuted ??
+    item.doNotDisturb ??
+    item.disturbFlag ??
+    item.muteFlag ??
+    item.shieldingFlag ??
+    item.shieldMsg ??
+    false
+  const muteFlag = Boolean(muteSource)
+  const storedMute = Object.prototype.hasOwnProperty.call(conversationMuteState, id)
+    ? conversationMuteState[id]
+    : undefined
+  const resolvedMute = typeof storedMute === 'boolean' ? storedMute : muteFlag
+  if (typeof storedMute !== 'boolean') {
+    conversationMuteState[id] = resolvedMute
+  }
+  const announcementUpdatedAt = parseTimestamp(
+    item.announcementUpdatedAt ?? item.noticeUpdatedAt ?? item.announcementTime ?? null,
+  )
 
   return {
     id,
@@ -290,7 +340,14 @@ const normalizeConversation = (item, index) => {
     avatar,
     lastMessageId: item.lastMessageId ?? null,
     sendTime,
+    conversationType,
+    isGroupConversation,
+    groupName: item.groupName || displayName,
+    announcement: item.announcement || item.notice || '',
+    announcementUpdatedAt,
+    members: Array.isArray(item.members) ? item.members : [],
     isFavorite: favoriteFlag,
+    isMuted: resolvedMute,
     clock: formatConversationClock(sendTime),
   }
 }
@@ -1105,6 +1162,11 @@ const selectedConversation = computed(() => {
   }
 })
 
+const selectedConversationEntity = computed(() => {
+  const list = Array.isArray(conversations.value) ? conversations.value : []
+  return list.find((item) => item.id === activeConversationId.value) || null
+})
+
 const selectedThread = computed(() => {
   if (!activeConversationId.value) return []
   return messagesByConversation.value[activeConversationId.value] || []
@@ -1135,6 +1197,29 @@ const selectToolbarAction = async (id) => {
   }
 }
 
+const toggleConversationFavorite = async (conversationId, nextFavorite) => {
+  if (!conversationId) return false
+  const endpoint = nextFavorite ? '/session/setFavorite' : '/session/cancelFavorite'
+  try {
+    const { message } = await apiClient.post(endpoint, {
+      param: conversationId,
+    })
+    const target = conversations.value.find((item) => item.id === conversationId)
+    if (target) {
+      target.isFavorite = nextFavorite
+      target.statusCode = nextFavorite ? 3 : 1
+    }
+    sortConversations()
+    ElMessage.success(message || (nextFavorite ? '已设置为常用会话' : '已取消常用会话'))
+    await loadConversations({ force: true })
+    return true
+  } catch (error) {
+    console.error('设置常用会话失败', error)
+    ElMessage.error(error?.message || '操作失败，请稍后重试')
+    return false
+  }
+}
+
 const handleMarkFavoriteConversation = async () => {
   const target = conversationMenuTarget.value
   if (!target) {
@@ -1142,20 +1227,43 @@ const handleMarkFavoriteConversation = async () => {
     return
   }
   const nextFavorite = !target.isFavorite
-  const endpoint = nextFavorite ? '/session/setFavorite' : '/session/cancelFavorite'
+  await toggleConversationFavorite(target.id, nextFavorite)
+  closeConversationMenu()
+}
+
+const handleToggleConversationFavorite = async (nextFavorite) => {
+  const conversation = selectedConversation.value
+  if (!conversation) return
+  await toggleConversationFavorite(conversation.id, nextFavorite)
+}
+
+const handleToggleConversationMute = (nextMuted) => {
+  const conversation = selectedConversation.value
+  if (!conversation) return
+  const target = conversations.value.find((item) => item.id === conversation.id)
+  if (!target) return
+  target.isMuted = nextMuted
+  conversationMuteState[conversation.id] = nextMuted
+  ElMessage.success(nextMuted ? '已开启消息免打扰' : '已关闭消息免打扰')
+}
+
+const deleteConversationById = async (conversationId, { successMessage } = {}) => {
+  if (!conversationId) return false
+  const target = conversations.value.find((item) => item.id === conversationId)
+  if (!target) return false
   try {
-    const { message } = await apiClient.post(endpoint, {
-      param: target.id,
-    })
-    target.isFavorite = nextFavorite
-    target.statusCode = nextFavorite ? 3 : 1
-    ElMessage.success(message || (nextFavorite ? '已设置为常用会话' : '已取消常用会话'))
-    await loadConversations({ force: true })
+    await apiClient.post('/session/deleteSession', { param: conversationId })
+    conversations.value = conversations.value.filter((item) => item.id !== conversationId)
+    if (activeConversationId.value === conversationId) {
+      activeConversationId.value = conversations.value[0]?.id ?? null
+    }
+    delete conversationMuteState[conversationId]
+    ElMessage.success(successMessage || '会话已删除')
+    return true
   } catch (error) {
-    console.error('设置常用会话失败', error)
-    ElMessage.error(error?.message || '操作失败，请稍后重试')
-  } finally {
-    closeConversationMenu()
+    console.error('删除会话失败', error)
+    ElMessage.error(error?.message || '删除会话失败，请稍后重试')
+    return false
   }
 }
 
@@ -1165,18 +1273,214 @@ const handleDeleteConversation = async () => {
     closeConversationMenu()
     return
   }
+  await deleteConversationById(target.id)
+  closeConversationMenu()
+}
+
+const handleDeleteConversationFromDrawer = async () => {
+  const conversation = selectedConversation.value
+  if (!conversation) return
+  await deleteConversationById(conversation.id)
+}
+
+const handleLeaveGroupFromDrawer = async () => {
+  const conversation = selectedConversation.value
+  if (!conversation) return
+  const success = await deleteConversationById(conversation.id, { successMessage: '已退出群聊' })
+  if (success) {
+    showFriendModal.value = false
+  }
+}
+
+const groupInviteCandidates = computed(() => {
+    const conversation = selectedConversationEntity.value
+    if (!conversation || !conversation.isGroupConversation) return []
+    const members = Array.isArray(conversation.members) ? conversation.members : []
+    const memberIds = new Set(
+      members
+        .map(
+          (member) =>
+            member?.id ??
+            member?.userId ??
+            member?.memberId ??
+            member?.friendId ??
+            member?.contactId ??
+            member?.email ??
+            null,
+        )
+        .filter((id) => id !== null && id !== undefined),
+    )
+    return (Array.isArray(contacts.value) ? contacts.value : [])
+      .map((friend) => {
+        const id = friend?.id ?? friend?.friendId ?? friend?.userId ?? friend?.contactId ?? null
+        return {
+          id,
+          displayName:
+            friend?.remark ||
+            friend?.nickname ||
+            friend?.displayName ||
+            friend?.name ||
+            friend?.email ||
+            (id !== null && id !== undefined ? `好友 #${id}` : '好友'),
+          avatar:
+            friend?.avatarFullUrl ||
+            friend?.avatarUrl ||
+            friend?.avatar ||
+            DEFAULT_AVATAR_URL,
+          email: friend?.email || '',
+        }
+      })
+      .filter((friend) => friend.id !== null && friend.id !== undefined && !memberIds.has(friend.id))
+})
+
+const canInviteGroupMembers = computed(() => {
+  const conversation = selectedConversationEntity.value
+  if (!conversation || !conversation.isGroupConversation) return false
+  return groupInviteCandidates.value.length > 0
+})
+
+watch(
+  () => selectedConversationEntity.value?.id,
+  () => {
+    showGroupInviteModal.value = false
+    showAnnouncementModal.value = false
+    savingAnnouncement.value = false
+  },
+)
+
+const handleInviteMembers = async () => {
+  const conversation = selectedConversationEntity.value
+  if (!conversation || !conversation.isGroupConversation) return
+  await ensureFriendsLoaded()
+  if (!groupInviteCandidates.value.length) {
+    ElMessage.info('暂无可邀请的好友')
+    return
+  }
+  showGroupInviteModal.value = true
+}
+
+const closeGroupInviteModal = () => {
+  showGroupInviteModal.value = false
+}
+
+const handleInviteMembersConfirm = (selectedIds) => {
+  const conversation = selectedConversationEntity.value
+  if (!conversation || !conversation.isGroupConversation) {
+    closeGroupInviteModal()
+    return
+  }
+  const ids = Array.isArray(selectedIds) ? selectedIds : []
+  if (!ids.length) {
+    closeGroupInviteModal()
+    return
+  }
+  const friendMap = new Map(
+    (Array.isArray(contacts.value) ? contacts.value : []).map((friend) => [
+      friend?.id ?? friend?.friendId ?? friend?.userId ?? friend?.contactId ?? null,
+      friend,
+    ]),
+  )
+  const target = conversation
+  const existingIds = new Set(
+    (Array.isArray(target.members) ? target.members : [])
+      .map(
+        (member) =>
+          member?.id ??
+          member?.userId ??
+          member?.memberId ??
+          member?.friendId ??
+          member?.contactId ??
+          null,
+      )
+      .filter((id) => id !== null && id !== undefined),
+  )
+
+  const additions = []
+  ids.forEach((id) => {
+    if (id === null || id === undefined) return
+    if (existingIds.has(id)) return
+    const friend = friendMap.get(id)
+    if (!friend) return
+    existingIds.add(id)
+    additions.push({
+      id,
+      name:
+        friend?.remark ||
+        friend?.nickname ||
+        friend?.displayName ||
+        friend?.name ||
+        friend?.email ||
+        `好友 #${id}`,
+      avatar:
+        friend?.avatarFullUrl ||
+        friend?.avatarUrl ||
+        friend?.avatar ||
+        DEFAULT_AVATAR_URL,
+    })
+  })
+
+  if (additions.length) {
+    const currentMembers = Array.isArray(target.members) ? target.members : []
+    target.members = [...currentMembers, ...additions]
+    sortConversations()
+    ElMessage.success('邀请已发送')
+  } else {
+    ElMessage.info('未选择新的好友')
+  }
+  closeGroupInviteModal()
+}
+
+const handleUpdateConversationGroupName = (value) => {
+  const conversation = selectedConversationEntity.value
+  if (!conversation || !conversation.isGroupConversation) return
+  const nextName = (value ?? '').trim()
+  const currentName = (conversation.groupName || conversation.displayName || '').trim()
+  if (!nextName || nextName === currentName) {
+    ElMessage.info('群聊名称未变化')
+    return
+  }
+  conversation.groupName = nextName
+  conversation.displayName = nextName
+  conversation.nameCn = nextName
+  conversation.nameEn = nextName
+  sortConversations()
+  ElMessage.success('群聊名称已更新')
+}
+
+const handleEditAnnouncement = () => {
+  const conversation = selectedConversationEntity.value
+  if (!conversation || !conversation.isGroupConversation) return
+  showAnnouncementModal.value = true
+}
+
+const closeAnnouncementModal = () => {
+  if (savingAnnouncement.value) return
+  showAnnouncementModal.value = false
+}
+
+const handleSaveAnnouncement = async (content) => {
+  const conversation = selectedConversationEntity.value
+  if (!conversation || !conversation.isGroupConversation) {
+    closeAnnouncementModal()
+    return
+  }
+  const nextContent = (content ?? '').trim()
+  if (conversation.announcement === nextContent) {
+    ElMessage.info('群公告未变化')
+    closeAnnouncementModal()
+    return
+  }
+  savingAnnouncement.value = true
   try {
-    await apiClient.post('/session/deleteSession', { param: target.id })
-    conversations.value = conversations.value.filter((item) => item.id !== target.id)
-    if (activeConversationId.value === target.id) {
-      activeConversationId.value = conversations.value[0]?.id ?? null
-    }
-    ElMessage.success('会话已删除')
+    conversation.announcement = nextContent
+    conversation.announcementUpdatedAt = Date.now()
+    ElMessage.success('群公告已更新')
+    showAnnouncementModal.value = false
   } catch (error) {
-    console.error('删除会话失败', error)
-    ElMessage.error(error?.message || '删除会话失败，请稍后重试')
+    console.error('更新群公告失败', error)
+    ElMessage.error('群公告更新失败')
   } finally {
-    closeConversationMenu()
+    savingAnnouncement.value = false
   }
 }
 
