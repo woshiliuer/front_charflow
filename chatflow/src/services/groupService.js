@@ -33,3 +33,18 @@ export const fetchNormalizedGroups = async () => {
   }
   return rawList.map((item, index) => normalizeGroup(item, index))
 }
+
+/**
+ * 获取群组详情
+ * @param {number} groupId - 群组ID
+ * @returns {Promise<Object>} 群组详情数据
+ */
+export const fetchGroupDetail = async (groupId) => {
+  const { data } = await apiClient.post('/group/groupDetail', { param: groupId })
+  return {
+    id: data.id,
+    groupName: data.groupName,
+    announcement: data.announcement,
+    members: data.members || []
+  }
+}

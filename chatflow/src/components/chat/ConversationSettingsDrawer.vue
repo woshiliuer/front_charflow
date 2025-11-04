@@ -43,7 +43,6 @@
                     @click="handleInviteClick"
                   >
                     <span class="plus">+</span>
-                    <span class="add-label">邀请</span>
                   </button>
                 </div>
                 <p v-if="!filteredMembers.length" class="empty-hint">暂无群成员数据</p>
@@ -195,6 +194,7 @@
 
 <script setup>
 import { computed, ref, watch } from 'vue'
+import { fetchGroupDetail } from '@/services/groupService'
 
 const DEFAULT_AVATAR_URL =
   'https://chat-flow.oss-cn-guangzhou.aliyuncs.com/default-avatar/default-person.jpg'
@@ -221,6 +221,8 @@ const emit = defineEmits([
 ])
 
 const memberSearch = ref('')
+const groupDetail = ref(null)
+const loadingGroupDetail = ref(false)
 
 const avatarUrl = computed(() => {
   return props.conversation?.avatar || DEFAULT_AVATAR_URL
@@ -247,11 +249,15 @@ const groupNameDraft = ref('')
 
 const groupName = computed(() => {
   if (!isGroupConversation.value) return ''
+  // 优先使用从接口获取的群组名称
+  if (groupDetail.value?.groupName) return groupDetail.value.groupName
   return props.conversation?.groupName || displayName.value
 })
 
 const groupAnnouncement = computed(() => {
   if (!isGroupConversation.value) return ''
+  // 优先使用从接口获取的群公告
+  if (groupDetail.value?.announcement) return groupDetail.value.announcement
   return props.conversation?.announcement || ''
 })
 
@@ -278,6 +284,19 @@ const announcementUpdatedHint = computed(() => {
 
 const groupMembers = computed(() => {
   if (!isGroupConversation.value) return []
+  // 优先使用从接口获取的成员列表
+  if (groupDetail.value?.members && Array.isArray(groupDetail.value.members)) {
+    return groupDetail.value.members.map((member) => ({
+      id: member.memberId,
+      userId: member.memberId,
+      avatar: member.avatarFullUrl,
+      avatarUrl: member.avatarFullUrl,
+      avatarFullUrl: member.avatarFullUrl,
+      name: member.nickname || member.username || `用户${member.memberId}`,
+      nickname: member.nickname,
+      username: member.username,
+    })).slice(0, 20)
+  }
   const members = Array.isArray(props.conversation?.members) ? props.conversation.members : []
   return members.slice(0, 20)
 })
@@ -299,12 +318,44 @@ const filteredMembers = computed(() => {
   })
 })
 
+// 加载群组详情
+const loadGroupDetail = async () => {
+  if (!isGroupConversation.value || !props.conversation?.relationId) {
+    return
+  }
+
+  try {
+    loadingGroupDetail.value = true
+    const detail = await fetchGroupDetail(props.conversation.relationId)
+    groupDetail.value = detail
+  } catch (error) {
+    console.error('Failed to fetch group detail:', error)
+    // 失败时使用 props 中的数据作为后备
+    groupDetail.value = null
+  } finally {
+    loadingGroupDetail.value = false
+  }
+}
+
+// 监听会话变化，重置状态并加载群组详情
 watch(
   () => props.conversation?.id,
   () => {
     memberSearch.value = ''
     editingGroupName.value = false
     groupNameDraft.value = groupName.value
+    groupDetail.value = null
+  },
+  { immediate: true },
+)
+
+// 监听抽屉显示状态，打开时加载群组详情
+watch(
+  () => props.visible,
+  (newVisible) => {
+    if (newVisible && isGroupConversation.value) {
+      loadGroupDetail()
+    }
   },
   { immediate: true },
 )

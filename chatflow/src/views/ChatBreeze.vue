@@ -297,6 +297,12 @@ const normalizeConversation = (item, index) => {
   const rawId = item.id ?? item.sessionId ?? index
   const numericId = Number(rawId)
   const id = Number.isFinite(numericId) ? numericId : rawId
+  
+  // relationId 是好友id/群聊id
+  const rawRelationId = item.relationId
+  const numericRelationId = Number(rawRelationId)
+  const relationId = Number.isFinite(numericRelationId) ? numericRelationId : rawRelationId
+  
   const displayName = item.displayName || item.name || `会话 ${id}`
   const sendTime = parseTimestamp(item.sendTime)
   const unreadCount = Number(item.unreadCount)
@@ -329,6 +335,7 @@ const normalizeConversation = (item, index) => {
 
   return {
     id,
+    relationId,
     displayName,
     nameEn: displayName,
     nameCn: item.nameCn || '',
