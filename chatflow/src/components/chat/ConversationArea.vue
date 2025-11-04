@@ -73,6 +73,7 @@
       <ConversationSettingsDrawer
         :visible="showSettingsDrawer"
         :conversation="selectedConversation"
+        :current-user="currentUser"
         :is-muted="isMuted"
         :is-favorite="isFavorite"
         :invite-enabled="propsInviteEnabled"
@@ -86,6 +87,7 @@
         @invite="handleInviteMembers"
         @update-group-name="handleUpdateGroupName"
         @edit-announcement="handleEditAnnouncement"
+        @remove-member="handleRemoveMember"
       />
     </section>
   </section>
@@ -114,6 +116,7 @@ const emit = defineEmits([
   'invite-members',
   'update-group-name',
   'edit-announcement',
+  'remove-member',
 ])
 
 const localDraft = ref(props.draft)
@@ -179,6 +182,10 @@ const handleUpdateGroupName = (value) => {
 
 const handleEditAnnouncement = () => {
   emit('edit-announcement')
+}
+
+const handleRemoveMember = (member) => {
+  emit('remove-member', member)
 }
 
 watch(

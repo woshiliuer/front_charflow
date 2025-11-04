@@ -124,6 +124,7 @@
       @leave-group="handleLeaveGroupFromDrawer"
       @invite-members="handleInviteMembers"
       @update-group-name="handleUpdateConversationGroupName"
+      @remove-member="handleRemoveMemberFromGroup"
       @edit-announcement="handleEditAnnouncement"
     />
     <BrandShowcase v-else />
@@ -234,6 +235,7 @@ import GroupAnnouncementModal from '@/components/chat/GroupAnnouncementModal.vue
 import ProfilePopover from '@/components/profile/ProfilePopover.vue'
 import { apiClient } from '@/services/apiClient'
 import { fetchNormalizedFriends } from '@/services/friendService'
+import { removeGroupMember } from '@/services/groupService'
 import { requestPasswordResetCode, recoverPassword } from '@/services/passwordRecovery'
 import { sendMessage as sendMessageAPI } from '@/services/messageService'
 import SettingsPanel from '@/components/settings/SettingsPanel.vue'
@@ -1488,6 +1490,30 @@ const handleSaveAnnouncement = async (content) => {
     ElMessage.error('群公告更新失败')
   } finally {
     savingAnnouncement.value = false
+  }
+}
+
+const handleRemoveMemberFromGroup = async (member) => {
+  const conversation = selectedConversationEntity.value
+  if (!conversation || !conversation.isGroupConversation) return
+  
+  if (!member || !member.userId) {
+    ElMessage.warning('成员信息无效')
+    return
+  }
+
+  try {
+    await removeGroupMember(conversation.id, member.userId)
+    
+    // 从本地成员列表中移除
+    if (Array.isArray(conversation.members)) {
+      conversation.members = conversation.members.filter(m => m.userId !== member.userId)
+    }
+    
+    ElMessage.success(`已将 ${member.name || member.nickname || member.displayName || '该成员'} 移出群聊`)
+  } catch (error) {
+    console.error('移除群成员失败', error)
+    ElMessage.error('移除群成员失败，请稍后重试')
   }
 }
 

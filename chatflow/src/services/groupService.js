@@ -48,3 +48,16 @@ export const fetchGroupDetail = async (groupId) => {
     members: data.members || []
   }
 }
+
+/**
+ * 移除群成员
+ * @param {number} groupId - 群组ID
+ * @param {number} memberId - 成员ID
+ * @returns {Promise<void>}
+ */
+export const removeGroupMember = async (groupId, memberId) => {
+  await apiClient.post('/group/removeMember', { 
+    groupId, 
+    memberId 
+  })
+}

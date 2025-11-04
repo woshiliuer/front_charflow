@@ -114,6 +114,7 @@ const handleSave = () => {
 .modal-panel {
   position: relative;
   width: min(520px, calc(100vw - 48px));
+  max-height: calc(100vh - 48px);
   background: #f9fcfa;
   border-radius: 24px;
   box-shadow: 0 32px 64px rgba(20, 42, 31, 0.28);
@@ -158,6 +159,8 @@ const handleSave = () => {
   display: flex;
   flex-direction: column;
   gap: 12px;
+  flex: 1;
+  overflow-y: auto;
 }
 
 .modal-body textarea {
@@ -171,6 +174,7 @@ const handleSave = () => {
   line-height: 1.6;
   color: #183727;
   background: rgba(255, 255, 255, 0.95);
+  box-sizing: border-box;
 }
 
 .modal-body textarea:focus {
@@ -248,6 +252,31 @@ const handleSave = () => {
 @media (max-width: 600px) {
   .modal-panel {
     width: calc(100vw - 24px);
+    margin: 12px;
+  }
+  
+  .modal-header {
+    padding: 18px 20px;
+  }
+  
+  .modal-body {
+    padding: 18px 20px 6px;
+  }
+  
+  .modal-body textarea {
+    min-height: 160px;
+    padding: 12px 14px;
+    font-size: 14px;
+  }
+  
+  .modal-footer {
+    padding: 14px 20px 20px;
+  }
+  
+  .modal-footer button {
+    min-width: 90px;
+    padding: 8px 16px;
+    font-size: 13px;
   }
 }
 </style>
