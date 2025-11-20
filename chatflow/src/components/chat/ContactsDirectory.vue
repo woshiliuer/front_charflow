@@ -228,7 +228,16 @@
             <p>暂未加入任何群聊，快去创建或加入一个吧！</p>
           </div>
           <ul v-else class="group-list">
-            <li v-for="group in groups" :key="group.id" class="group-item">
+            <li
+              v-for="group in groups"
+              :key="group.id"
+              class="group-item"
+              role="button"
+              tabindex="0"
+              @click="emit('select-group', group)"
+              @keydown.enter.prevent="emit('select-group', group)"
+              @keydown.space.prevent="emit('select-group', group)"
+            >
               <div class="group-avatar">
                 <img
                   v-if="group.avatar"
@@ -279,7 +288,7 @@ const props = defineProps({
   },
 })
 
-const emit = defineEmits(['select-friend', 'approve-request', 'reject-request'])
+const emit = defineEmits(['select-friend', 'approve-request', 'reject-request', 'select-group'])
 
 const expandedSections = reactive({
   requests: false,

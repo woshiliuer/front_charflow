@@ -63,9 +63,10 @@
           <button
             type="button"
             class="friend-modal-action"
+            :disabled="sendingConversation"
             @click="emitSend"
           >
-            发消息
+            {{ sendingConversation ? '正在发起会话...' : '发消息' }}
           </button>
         </footer>
       </div>
@@ -83,11 +84,13 @@ import 'element-plus/es/components/message/style/css'
 const props = defineProps({
   visible: { type: Boolean, default: false },
   friend: { type: Object, default: null },
+  sendingConversation: { type: Boolean, default: false },
 })
 
 const emit = defineEmits(['close', 'send', 'delete'])
 
 const friend = computed(() => props.friend)
+const sendingConversation = computed(() => props.sendingConversation)
 const detail = ref(null)
 const isLoading = ref(false)
 const detailError = ref('')

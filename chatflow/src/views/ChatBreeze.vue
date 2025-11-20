@@ -93,6 +93,7 @@
         @select-friend="selectFriend"
         @approve-request="handleApproveFriendRequest"
         @reject-request="handleRejectFriendRequest"
+        @select-group="handleSelectGroupFromContacts"
       />
 
       <SettingsPanel v-else 
@@ -124,8 +125,11 @@
       @leave-group="handleLeaveGroupFromDrawer"
       @invite-members="handleInviteMembers"
       @update-group-name="handleUpdateConversationGroupName"
+      @update-group-intro="handleUpdateConversationGroupIntro"
       @remove-member="handleRemoveMemberFromGroup"
       @edit-announcement="handleEditAnnouncement"
+      @send-group-message="handleSendGroupMessageFromDetail"
+      @dissolve-group="handleDissolveGroupFromDetail"
     />
     <BrandShowcase v-else />
     <UserProfilePanel
@@ -151,6 +155,7 @@
     <FriendDetailModal
       :visible="showFriendModal"
       :friend="selectedFriend"
+      :sending-conversation="startingConversation"
       @close="closeFriendModal"
       @send="handleSendMessageToFriend"
       @delete="handleFriendDeleted"
@@ -182,6 +187,14 @@
       :saving="savingAnnouncement"
       @close="closeAnnouncementModal"
       @save="handleSaveAnnouncement"
+    />
+    <GroupDetailModal
+      :visible="showGroupDetailModal"
+      :group="selectedGroupFromContacts"
+      :current-user-id="currentUser.id"
+      @close="closeGroupDetailModal"
+      @send="handleSendGroupMessageFromContacts"
+      @dissolve="handleDissolveGroupFromContacts"
     />
     <FriendRemarkModal
       :visible="showApproveRemarkModal"
@@ -232,12 +245,20 @@ import FriendDetailModal from '@/components/chat/FriendDetailModal.vue'
 import RejectFriendModal from '@/components/chat/RejectFriendModal.vue'
 import GroupInviteModal from '@/components/chat/GroupInviteModal.vue'
 import GroupAnnouncementModal from '@/components/chat/GroupAnnouncementModal.vue'
+import GroupDetailModal from '@/components/chat/GroupDetailModal.vue'
 import ProfilePopover from '@/components/profile/ProfilePopover.vue'
 import { apiClient } from '@/services/apiClient'
 import { fetchNormalizedFriends } from '@/services/friendService'
-import { removeGroupMember } from '@/services/groupService'
+import {
+  dissolveGroup,
+  fetchGroupDetail,
+  editGroup,
+  inviteMembers,
+  removeGroupMembers,
+} from '@/services/groupService'
 import { requestPasswordResetCode, recoverPassword } from '@/services/passwordRecovery'
 import { sendMessage as sendMessageAPI } from '@/services/messageService'
+import { restoreConversationByFriend, restoreConversationByGroup } from '@/services/conversationService'
 import SettingsPanel from '@/components/settings/SettingsPanel.vue'
 import ConversationArea from '@/components/chat/ConversationArea.vue'
 import UserProfilePanel from '@/components/settings/UserProfilePanel.vue'
@@ -256,6 +277,8 @@ const conversationsLoading = ref(false)
 const conversationMuteState = reactive({})
 const showGroupInviteModal = ref(false)
 const showAnnouncementModal = ref(false)
+const showGroupDetailModal = ref(false)
+const selectedGroupFromContacts = ref(null)
 const savingAnnouncement = ref(false)
 
 const DEFAULT_AVATAR_URL =
@@ -842,6 +865,7 @@ const startWidth = ref(sidebarWidth.value)
 const searchTerm = ref('')
 const draft = ref('')
 const showFriendModal = ref(false)
+const startingConversation = ref(false)
 const showCreateMenu = ref(false)
 const showProfileCard = ref(false)
 const toolsRef = ref(null)
@@ -1371,7 +1395,6 @@ const handleInviteMembers = async () => {
 const closeGroupInviteModal = () => {
   showGroupInviteModal.value = false
 }
-
 const handleInviteMembersConfirm = (selectedIds) => {
   const conversation = selectedConversationEntity.value
   if (!conversation || !conversation.isGroupConversation) {
@@ -1383,60 +1406,87 @@ const handleInviteMembersConfirm = (selectedIds) => {
     closeGroupInviteModal()
     return
   }
-  const friendMap = new Map(
-    (Array.isArray(contacts.value) ? contacts.value : []).map((friend) => [
-      friend?.id ?? friend?.friendId ?? friend?.userId ?? friend?.contactId ?? null,
-      friend,
-    ]),
-  )
-  const target = conversation
-  const existingIds = new Set(
-    (Array.isArray(target.members) ? target.members : [])
-      .map(
-        (member) =>
-          member?.id ??
-          member?.userId ??
-          member?.memberId ??
-          member?.friendId ??
-          member?.contactId ??
-          null,
+  const groupId = conversation.relationId ?? conversation.id
+  inviteMembers(groupId, ids)
+    .then(() => {
+      const friendMap = new Map(
+        (Array.isArray(contacts.value) ? contacts.value : []).map((friend) => [
+          friend?.id ?? friend?.friendId ?? friend?.userId ?? friend?.contactId ?? null,
+          friend,
+        ]),
       )
-      .filter((id) => id !== null && id !== undefined),
-  )
+      const target = conversation
+      const existingIds = new Set(
+        (Array.isArray(target.members) ? target.members : [])
+          .map(
+            (member) =>
+              member?.id ??
+              member?.userId ??
+              member?.memberId ??
+              member?.friendId ??
+              member?.contactId ??
+              null,
+          )
+          .filter((id) => id !== null && id !== undefined),
+      )
 
-  const additions = []
-  ids.forEach((id) => {
-    if (id === null || id === undefined) return
-    if (existingIds.has(id)) return
-    const friend = friendMap.get(id)
-    if (!friend) return
-    existingIds.add(id)
-    additions.push({
-      id,
-      name:
-        friend?.remark ||
-        friend?.nickname ||
-        friend?.displayName ||
-        friend?.name ||
-        friend?.email ||
-        `好友 #${id}`,
-      avatar:
-        friend?.avatarFullUrl ||
-        friend?.avatarUrl ||
-        friend?.avatar ||
-        DEFAULT_AVATAR_URL,
+      const additions = []
+      ids.forEach((id) => {
+        if (id === null || id === undefined) return
+        if (existingIds.has(id)) return
+        const friend = friendMap.get(id)
+        if (!friend) return
+        existingIds.add(id)
+        additions.push({
+          id,
+          name:
+            friend?.remark ||
+            friend?.nickname ||
+            friend?.displayName ||
+            friend?.name ||
+            friend?.email ||
+            `好友 #${id}`,
+          avatar:
+            friend?.avatarFullUrl ||
+            friend?.avatarUrl ||
+            friend?.avatar ||
+            DEFAULT_AVATAR_URL,
+        })
+      })
+
+      if (additions.length) {
+        const currentMembers = Array.isArray(target.members) ? target.members : []
+        target.members = [...currentMembers, ...additions]
+        sortConversations()
+      }
+      ElMessage.success('已发送邀请')
+      closeGroupInviteModal()
     })
-  })
+    .catch((error) => {
+      console.error('邀请成员失败', error)
+      ElMessage.error(error?.message || '邀请失败，请稍后重试')
+    })
+}
 
-  if (additions.length) {
-    const currentMembers = Array.isArray(target.members) ? target.members : []
-    target.members = [...currentMembers, ...additions]
-    sortConversations()
-    ElMessage.success('邀请已发送')
-  } else {
-    ElMessage.info('未选择新的好友')
+const updateGroupInfo = async (payload = {}) => {
+  const conversation = selectedConversationEntity.value
+  if (!conversation || !conversation.isGroupConversation) return false
+  const groupId = conversation.relationId ?? conversation.id
+  const body = {
+    groupId,
+    groupName: conversation.groupName || conversation.displayName || '',
+    introduction: conversation.introduction || '',
+    announcement: conversation.announcement || '',
+    ...payload,
   }
-  closeGroupInviteModal()
+  try {
+    await editGroup(body)
+    return true
+  } catch (error) {
+    console.error('更新群信息失败', error)
+    ElMessage.error(error?.message || '更新群信息失败，请稍后重试')
+    return false
+  }
 }
 
 const handleUpdateConversationGroupName = (value) => {
@@ -1453,9 +1503,23 @@ const handleUpdateConversationGroupName = (value) => {
   conversation.nameCn = nextName
   conversation.nameEn = nextName
   sortConversations()
+  updateGroupInfo({ groupName: nextName })
   ElMessage.success('群聊名称已更新')
 }
 
+const handleUpdateConversationGroupIntro = (value) => {
+  const conversation = selectedConversationEntity.value
+  if (!conversation || !conversation.isGroupConversation) return
+  const nextIntro = (value ?? '').trim()
+  const currentIntro = (conversation.introduction || '').trim()
+  if (nextIntro === currentIntro) {
+    ElMessage.info('群聊简介未变化')
+    return
+  }
+  conversation.introduction = nextIntro
+  updateGroupInfo({ introduction: nextIntro })
+  ElMessage.success('群聊简介已更新')
+}
 const handleEditAnnouncement = () => {
   const conversation = selectedConversationEntity.value
   if (!conversation || !conversation.isGroupConversation) return
@@ -1483,6 +1547,7 @@ const handleSaveAnnouncement = async (content) => {
   try {
     conversation.announcement = nextContent
     conversation.announcementUpdatedAt = Date.now()
+    await updateGroupInfo({ announcement: nextContent })
     ElMessage.success('群公告已更新')
     showAnnouncementModal.value = false
   } catch (error) {
@@ -1496,27 +1561,178 @@ const handleSaveAnnouncement = async (content) => {
 const handleRemoveMemberFromGroup = async (member) => {
   const conversation = selectedConversationEntity.value
   if (!conversation || !conversation.isGroupConversation) return
-  
-  if (!member || !member.userId) {
+
+  const ids = (
+    Array.isArray(member)
+      ? member
+      : [member?.userId ?? member?.memberId ?? member?.id ?? null]
+  )
+    .map((id) => (id === '' || id === undefined || id === null ? null : Number(id)))
+    .filter((id) => Number.isFinite(id))
+
+  if (!ids.length) {
     ElMessage.warning('成员信息无效')
     return
   }
 
   try {
-    await removeGroupMember(conversation.id, member.userId)
-    
-    // 从本地成员列表中移除
-    if (Array.isArray(conversation.members)) {
-      conversation.members = conversation.members.filter(m => m.userId !== member.userId)
+    const groupId = conversation.relationId ?? conversation.id
+    await removeGroupMembers(groupId, ids)
+
+    // 刷新群详情，保持成员列表和人数最新
+    try {
+      const detail = await fetchGroupDetail(groupId)
+      if (detail) {
+        if (Array.isArray(detail.members)) {
+          conversation.members = detail.members
+        }
+        if (typeof detail.memberCount === 'number') {
+          conversation.memberCount = detail.memberCount
+        }
+        if (detail.groupName) {
+          conversation.groupName = detail.groupName
+          conversation.displayName = detail.groupName
+        }
+        if (detail.introduction !== undefined) {
+          conversation.introduction = detail.introduction
+        }
+        if (detail.announcement !== undefined) {
+          conversation.announcement = detail.announcement
+        }
+      }
+    } catch (refreshError) {
+      console.warn('刷新群详情失败', refreshError)
+      // 兜底：手动从当前列表移除对应成员
+      if (Array.isArray(conversation.members)) {
+        conversation.members = conversation.members.filter(
+          (m) => !ids.includes(m.userId ?? m.memberId ?? m.id),
+        )
+      }
     }
-    
-    ElMessage.success(`已将 ${member.name || member.nickname || member.displayName || '该成员'} 移出群聊`)
+
+    ElMessage.success('已移除选中成员')
   } catch (error) {
     console.error('移除群成员失败', error)
-    ElMessage.error('移除群成员失败，请稍后重试')
+    ElMessage.error(error?.message || '移除群成员失败，请稍后重试')
   }
 }
 
+const handleSendGroupMessageFromDetail = async () => {
+  const conversation = selectedConversationEntity.value
+  if (!conversation || !conversation.isGroupConversation) return
+  const groupId = conversation.relationId ?? conversation.id
+  if (!groupId) {
+    ElMessage.warning('Ⱥ��IDȱ�ڣ���Դ�')
+    return
+  }
+  try {
+    const sessionId = await restoreConversationByGroup(groupId)
+    await loadConversations({ force: true })
+    const normalizedId = (() => {
+      const numeric = Number(sessionId)
+      return Number.isNaN(numeric) ? sessionId : numeric
+    })()
+    await selectConversation(normalizedId)
+    activeToolbar.value = 'conversations'
+  } catch (error) {
+    console.error('[ChatBreeze] Failed to restore group session:', error)
+    ElMessage.error(error?.message || '�޷�����Ⱥ��Ự�����Ժ�����')
+  }
+}
+
+const handleDissolveGroupFromDetail = async () => {
+  const conversation = selectedConversationEntity.value
+  if (!conversation || !conversation.isGroupConversation) return
+  const groupId = conversation.relationId ?? conversation.id
+  if (!groupId) {
+    ElMessage.warning('Ⱥ��IDȱ�ڣ��޷���ɢ')
+    return
+  }
+  try {
+    await dissolveGroup(groupId)
+    ElMessage.success('Ⱥ���ѽ�ɢ')
+    await loadConversations({ force: true })
+    if (activeConversationId.value === conversation.id) {
+      activeConversationId.value = conversations.value[0]?.id ?? null
+    }
+  } catch (error) {
+    console.error('[ChatBreeze] Dissolve group failed:', error)
+    ElMessage.error(error?.message || '��ɢȺ��ʧ�ܣ����Ժ�����')
+  }
+}
+
+const handleSelectGroupFromContacts = (group) => {
+  if (!group) return
+  selectedGroupFromContacts.value = {
+    ...group,
+    loading: true,
+  }
+  showGroupDetailModal.value = true
+  const groupId = group.id ?? group.groupId
+  if (!groupId) {
+    selectedGroupFromContacts.value.loading = false
+    return
+  }
+  fetchGroupDetail(groupId)
+    .then((detail) => {
+      selectedGroupFromContacts.value = {
+        ...group,
+        ...detail,
+        id: groupId,
+        memberCount: detail?.memberCount ?? group.memberCount,
+        introduction: detail?.introduction ?? group.introduction,
+      }
+    })
+    .catch((error) => {
+      console.error('[ChatBreeze] fetch group detail failed:', error)
+    })
+}
+
+const closeGroupDetailModal = () => {
+  showGroupDetailModal.value = false
+  selectedGroupFromContacts.value = null
+}
+
+const handleSendGroupMessageFromContacts = async () => {
+  if (!selectedGroupFromContacts.value) return
+  const groupId = selectedGroupFromContacts.value.id ?? selectedGroupFromContacts.value.groupId
+  if (!groupId) {
+    ElMessage.warning('群聊ID缺失，无法发消息')
+    return
+  }
+  try {
+    const sessionId = await restoreConversationByGroup(groupId)
+    await loadConversations({ force: true })
+    const normalizedId = (() => {
+      const numeric = Number(sessionId)
+      return Number.isNaN(numeric) ? sessionId : numeric
+    })()
+    await selectConversation(normalizedId)
+    activeToolbar.value = 'conversations'
+    closeGroupDetailModal()
+  } catch (error) {
+    console.error('[ChatBreeze] restore group from contacts failed:', error)
+    ElMessage.error(error?.message || '无法恢复群聊，请稍后重试')
+  }
+}
+
+const handleDissolveGroupFromContacts = async () => {
+  if (!selectedGroupFromContacts.value) return
+  const groupId = selectedGroupFromContacts.value.id ?? selectedGroupFromContacts.value.groupId
+  if (!groupId) {
+    ElMessage.warning('群聊ID缺失，无法解散')
+    return
+  }
+  try {
+    await dissolveGroup(groupId)
+    ElMessage.success('群聊已解散')
+    await loadConversations({ force: true })
+    closeGroupDetailModal()
+  } catch (error) {
+    console.error('[ChatBreeze] dissolve group from contacts failed:', error)
+    ElMessage.error(error?.message || '解散群聊失败，请稍后重试')
+  }
+}
 
 const selectFriend = (id) => {
   activeFriendId.value = id
@@ -1684,12 +1900,42 @@ const handleFriendDeleted = async () => {
   loadFriendRequests()
 }
 
-const handleSendMessageToFriend = () => {
-  if (!selectedFriend.value) return
-  const mention = selectedFriend.value.nickname || selectedFriend.value.nameEn
-  draft.value = `@${mention} `
-  showFriendModal.value = false
-  activeToolbar.value = 'conversations'
+const resolveFriendId = (friend) => {
+  if (!friend) return null
+  return (
+    friend.friendId ??
+    friend.userId ??
+    friend.id ??
+    null
+  )
+}
+
+const handleSendMessageToFriend = async () => {
+  if (!selectedFriend.value || startingConversation.value) return
+  const friend = selectedFriend.value
+  const friendId = resolveFriendId(friend)
+  if (!friendId) {
+    ElMessage.warning('好友信息无效，无法发起会话')
+    return
+  }
+  startingConversation.value = true
+  try {
+    const conversationId = await restoreConversationByFriend(friendId)
+    await loadConversations({ force: true })
+    const normalizedConversationId = (() => {
+      const numeric = Number(conversationId)
+      return Number.isNaN(numeric) ? conversationId : numeric
+    })()
+    await selectConversation(normalizedConversationId)
+    draft.value = ''
+    showFriendModal.value = false
+    activeToolbar.value = 'conversations'
+  } catch (error) {
+    console.error('[ChatBreeze] Failed to start conversation:', error)
+    ElMessage.error(error?.message || '发起会话失败，请稍后重试')
+  } finally {
+    startingConversation.value = false
+  }
 }
 
 const handleStartGroup = async () => {
@@ -2342,13 +2588,4 @@ const handleAvatarChange = async (file) => {
     display: none;
   }}
 </style>
-
-
-
-
-
-
-
-
-
 

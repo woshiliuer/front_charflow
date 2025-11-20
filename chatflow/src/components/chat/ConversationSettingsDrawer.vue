@@ -14,6 +14,23 @@
             X
           </button>
           <div v-if="conversation" class="drawer-body">
+            <div class="drawer-heading">
+              <span
+                class="type-chip"
+                :class="isGroupConversation ? 'group' : 'direct'"
+              >
+                {{ isGroupConversation ? '群聊' : '好友' }}
+              </span>
+              <span v-if="isGroupConversation" class="heading-meta">
+                <span class="meta-dot group" />
+                <span class="meta-text">{{ groupMemberCount }} 人</span>
+              </span>
+              <span v-else class="heading-meta">
+                <span class="meta-dot" :class="{ online: isOnline }" />
+                <span class="meta-text">{{ singleStatusText }}</span>
+              </span>
+            </div>
+
             <template v-if="isGroupConversation">
               <div class="group-search">
                 <input
@@ -86,6 +103,37 @@
                     保存
                   </button>
                 </div>
+              </div>
+
+              <div class="info-block editable">
+                <p class="section-title">群聊简介</p>
+                <div
+                  class="editable-field"
+                  :class="{ editing: editingGroupIntro }"
+                  @click="startEditingGroupIntro"
+                  @keydown.enter.prevent="finishEditingGroupIntro"
+                  @keydown.esc.prevent="cancelEditingGroupIntro"
+                >
+                  <input
+                    ref="groupIntroInputRef"
+                    type="text"
+                    v-model="groupIntroDraft"
+                    :readonly="!editingGroupIntro"
+                    :aria-readonly="!editingGroupIntro"
+                    placeholder="填写群聊简介"
+                  />
+                  <button
+                    v-if="editingGroupIntro"
+                    type="button"
+                    class="confirm-button"
+                    @click="finishEditingGroupIntro"
+                  >
+                    保存
+                  </button>
+                </div>
+                <p class="info-text muted" v-if="!editingGroupIntro && groupIntroduction">
+                  {{ groupIntroduction }}
+                </p>
               </div>
 
               <div
@@ -293,6 +341,7 @@ const emit = defineEmits([
   'leave-group',
   'invite',
   'update-group-name',
+  'update-group-intro',
   'edit-announcement',
   'remove-member',
 ])
@@ -323,15 +372,41 @@ const isGroupConversation = computed(
     props.conversation?.conversationType === 2,
 )
 
+const groupMemberCount = computed(() => {
+  if (!isGroupConversation.value) return 0
+  if (typeof groupDetail.value?.memberCount === 'number') return groupDetail.value.memberCount
+  if (typeof props.conversation?.memberCount === 'number') return props.conversation.memberCount
+  return groupMembers.value.length
+})
+
+const isOnline = computed(() => {
+  const status = props.conversation?.onlineStatus ?? props.conversation?.online ?? props.conversation?.status
+  if (status === true || status === 'online') return true
+  if (status === false || status === 'offline') return false
+  const numeric = Number(status)
+  return Number.isFinite(numeric) ? numeric === 1 : false
+})
+
+const singleStatusText = computed(() => (isOnline.value ? '在线' : '离线'))
+
 const groupNameInputRef = ref(null)
+const groupIntroInputRef = ref(null)
 const editingGroupName = ref(false)
+const editingGroupIntro = ref(false)
 const groupNameDraft = ref('')
+const groupIntroDraft = ref('')
 
 const groupName = computed(() => {
   if (!isGroupConversation.value) return ''
   // 优先使用从接口获取的群组名称
   if (groupDetail.value?.groupName) return groupDetail.value.groupName
   return props.conversation?.groupName || displayName.value
+})
+
+const groupIntroduction = computed(() => {
+  if (!isGroupConversation.value) return ''
+  if (groupDetail.value?.introduction) return groupDetail.value.introduction
+  return props.conversation?.introduction || ''
 })
 
 const groupAnnouncement = computed(() => {
@@ -455,7 +530,15 @@ const loadGroupDetail = async () => {
   try {
     loadingGroupDetail.value = true
     const detail = await fetchGroupDetail(props.conversation.relationId)
-    groupDetail.value = detail
+    const latestName = props.conversation?.groupName || detail.groupName
+    const latestIntro = props.conversation?.introduction || detail.introduction || ''
+    groupDetail.value = {
+      ...detail,
+      groupName: latestName,
+      introduction: latestIntro,
+    }
+    groupNameDraft.value = latestName || ''
+    groupIntroDraft.value = latestIntro
   } catch (error) {
     console.error('Failed to fetch group detail:', error)
     // 失败时使用 props 中的数据作为后备
@@ -472,6 +555,8 @@ watch(
     memberSearch.value = ''
     editingGroupName.value = false
     groupNameDraft.value = groupName.value
+    editingGroupIntro.value = false
+    groupIntroDraft.value = groupIntroduction.value
     groupDetail.value = null
   },
   { immediate: true },
@@ -486,6 +571,19 @@ watch(
     }
   },
   { immediate: true },
+)
+
+// 监听成员数量变化（例如移除成员后），可见时自动刷新群详情
+watch(
+  () =>
+    Array.isArray(props.conversation?.members)
+      ? props.conversation.members.length
+      : props.conversation?.memberCount,
+  (newVal, oldVal) => {
+    if (!props.visible || !isGroupConversation.value) return
+    if (newVal === oldVal) return
+    loadGroupDetail()
+  },
 )
 
 const handleToggleMute = () => {
@@ -530,6 +628,9 @@ const startEditingGroupName = () => {
 const finishEditingGroupName = () => {
   if (!editingGroupName.value) return
   const value = groupNameDraft.value.trim()
+  if (groupDetail.value) {
+    groupDetail.value.groupName = value
+  }
   emit('update-group-name', value || groupName.value)
   editingGroupName.value = false
 }
@@ -538,6 +639,35 @@ const cancelEditingGroupName = () => {
   if (!editingGroupName.value) return
   groupNameDraft.value = groupName.value
   editingGroupName.value = false
+}
+
+const startEditingGroupIntro = () => {
+  if (!isGroupConversation.value) return
+  if (props.groupNameEditable === false) return
+  if (!editingGroupIntro.value) {
+    groupIntroDraft.value = groupIntroduction.value
+    editingGroupIntro.value = true
+    requestAnimationFrame(() => {
+      groupIntroInputRef.value?.focus()
+      groupIntroInputRef.value?.select()
+    })
+  }
+}
+
+const finishEditingGroupIntro = () => {
+  if (!editingGroupIntro.value) return
+  const value = groupIntroDraft.value.trim()
+  if (groupDetail.value) {
+    groupDetail.value.introduction = value
+  }
+  emit('update-group-intro', value || groupIntroduction.value)
+  editingGroupIntro.value = false
+}
+
+const cancelEditingGroupIntro = () => {
+  if (!editingGroupIntro.value) return
+  groupIntroDraft.value = groupIntroduction.value
+  editingGroupIntro.value = false
 }
 
 const handleAnnouncementClick = () => {
@@ -595,17 +725,14 @@ const confirmRemoveMembers = () => {
     console.log('无法移除成员，权限不足或未选择成员')
     return
   }
-  
-  // TODO: 调用移除成员的接口
-  console.log('移除成员:', selectedMembersToRemove.value)
-  
+
+  // 发出事件，交由上层调用移除成员接口
+  emit('remove-member', selectedMembersToRemove.value)
+
   // 关闭弹窗并重置状态
   showRemoveMemberDialog.value = false
   removeMemberSearch.value = ''
   selectedMembersToRemove.value = []
-  
-  // 发出事件
-  emit('remove-member', selectedMembersToRemove.value)
 }
 </script>
 
@@ -671,6 +798,65 @@ const confirmRemoveMembers = () => {
   overflow-y: auto;
   padding-right: 8px;
   padding-bottom: 56px;
+}
+
+.drawer-heading {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.type-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: #1f3526;
+  background: rgba(49, 171, 102, 0.14);
+  border: 1px solid rgba(49, 171, 102, 0.28);
+}
+
+.type-chip.group {
+  background: rgba(17, 116, 75, 0.14);
+  border-color: rgba(17, 116, 75, 0.32);
+}
+
+.type-chip.direct {
+  background: rgba(30, 83, 135, 0.12);
+  border-color: rgba(30, 83, 135, 0.28);
+}
+
+.heading-meta {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: #2f513b;
+}
+
+.meta-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #9aa7a0;
+  display: inline-flex;
+}
+
+.meta-dot.group {
+  background: #2ca36c;
+}
+
+.meta-dot.online {
+  background: #32c374;
+  box-shadow: 0 0 0 4px rgba(50, 195, 116, 0.12);
+}
+
+.meta-text {
+  line-height: 1;
 }
 
 .drawer-footer {

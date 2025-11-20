@@ -86,8 +86,10 @@
         @leave-group="handleDrawerLeaveGroup"
         @invite="handleInviteMembers"
         @update-group-name="handleUpdateGroupName"
+        @update-group-intro="handleUpdateGroupIntro"
         @edit-announcement="handleEditAnnouncement"
         @remove-member="handleRemoveMember"
+        @dissolve-group="handleDissolveGroup"
       />
     </section>
   </section>
@@ -115,8 +117,10 @@ const emit = defineEmits([
   'leave-group',
   'invite-members',
   'update-group-name',
+  'update-group-intro',
   'edit-announcement',
   'remove-member',
+  'dissolve-group',
 ])
 
 const localDraft = ref(props.draft)
@@ -180,6 +184,10 @@ const handleUpdateGroupName = (value) => {
   emit('update-group-name', value)
 }
 
+const handleUpdateGroupIntro = (value) => {
+  emit('update-group-intro', value)
+}
+
 const handleEditAnnouncement = () => {
   emit('edit-announcement')
 }
@@ -194,6 +202,10 @@ watch(
     showSettingsDrawer.value = false
   },
 )
+
+const handleDissolveGroup = () => {
+  emit('dissolve-group')
+}
 </script>
 
 <style scoped>

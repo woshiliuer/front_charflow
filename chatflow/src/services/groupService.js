@@ -45,19 +45,75 @@ export const fetchGroupDetail = async (groupId) => {
     id: data.id,
     groupName: data.groupName,
     announcement: data.announcement,
-    members: data.members || []
+    members: data.members || [],
+    introduction: data.introduction,
+    memberCount: data.memberCount,
+    role: data.role,
+    avatarFullUrl: data.avatarFullUrl,
   }
 }
 
 /**
- * 移除群成员
- * @param {number} groupId - 群组ID
- * @param {number} memberId - 成员ID
+ * 解散群聊
+ * @param {number|string} groupId
  * @returns {Promise<void>}
  */
-export const removeGroupMember = async (groupId, memberId) => {
-  await apiClient.post('/group/removeMember', { 
-    groupId, 
-    memberId 
+export const dissolveGroup = async (groupId) => {
+  if (groupId === null || groupId === undefined || groupId === '') {
+    throw new Error('群聊ID不能为空')
+  }
+  await apiClient.post('/group/dissolve', { param: groupId })
+}
+
+/**
+ * 编辑群聊（名称/简介/公告）
+ * @param {object} payload
+ * @param {number|string} payload.groupId
+ * @param {string} payload.groupName
+ * @param {string} [payload.introduction]
+ * @param {string} [payload.announcement]
+ */
+export const editGroup = async ({ groupId, groupName, introduction = '', announcement = '' }) => {
+  if (groupId === null || groupId === undefined || groupId === '') {
+    throw new Error('群聊ID不能为空')
+  }
+  if (!groupName) {
+    throw new Error('群聊名称不能为空')
+  }
+  return apiClient.post('/group/edit', {
+    groupId,
+    groupName,
+    introduction,
+    announcement,
+  })
+}
+
+/**
+ * 邀请新成员
+ * @param {number|string} groupId
+ * @param {Array<number|string>} memberIds
+ */
+export const inviteMembers = async (groupId, memberIds = []) => {
+  if (!groupId) throw new Error('群聊ID不能为空')
+  const ids = Array.isArray(memberIds) ? memberIds : []
+  if (!ids.length) throw new Error('成员ID列表不能为空')
+  return apiClient.post('/group/inviteMembers', {
+    groupId,
+    memberIds: ids,
+  })
+}
+
+/**
+ * 批量移除成员
+ * @param {number|string} groupId
+ * @param {Array<number|string>} memberIds
+ */
+export const removeGroupMembers = async (groupId, memberIds = []) => {
+  if (!groupId) throw new Error('群聊ID不能为空')
+  const ids = Array.isArray(memberIds) ? memberIds : []
+  if (!ids.length) throw new Error('成员ID列表不能为空')
+  return apiClient.post('/group/removeMembers', {
+    groupId,
+    memberIds: ids,
   })
 }
