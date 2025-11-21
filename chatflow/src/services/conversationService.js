@@ -55,3 +55,29 @@ export const restoreConversationByGroup = async (groupId) => {
 
 // 兼容旧调用名
 export const createConversationWithFriend = (...args) => restoreConversationByFriend(...args)
+
+/**
+ * 获取会话列表
+ */
+export const fetchSessionList = async () => {
+  const { data } = await apiClient.get('/session/sessionList')
+  return Array.isArray(data) ? data : []
+}
+
+/**
+ * 设置/取消常用会话
+ * @param {number|string} conversationId
+ * @param {boolean} favorite
+ */
+export const toggleFavoriteSession = async (conversationId, favorite) => {
+  const endpoint = favorite ? '/session/setFavorite' : '/session/cancelFavorite'
+  return apiClient.post(endpoint, { param: conversationId })
+}
+
+/**
+ * 删除会话
+ * @param {number|string} conversationId
+ */
+export const deleteSession = async (conversationId) => {
+  return apiClient.post('/session/deleteSession', { param: conversationId })
+}

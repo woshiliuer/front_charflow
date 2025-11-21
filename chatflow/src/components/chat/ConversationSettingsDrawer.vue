@@ -318,7 +318,7 @@
 <script setup>
 import { computed, ref, watch } from 'vue'
 import { fetchGroupDetail } from '@/services/groupService'
-import { apiClient } from '@/services/apiClient'
+import { fetchFriendDetail } from '@/services/friendService'
 
 const DEFAULT_AVATAR_URL =
   'https://chat-flow.oss-cn-guangzhou.aliyuncs.com/default-avatar/default-person.jpg'
@@ -560,9 +560,7 @@ const loadFriendDetail = async () => {
   loadingFriendDetail.value = true
   try {
      console.log("调用到了")
-    const { data } = await apiClient.post('/friend/friendDetail', {
-      param: directFriendId.value,
-    })
+    const data = await fetchFriendDetail(directFriendId.value)
     friendDetail.value = data ?? null
   } catch (error) {
     console.warn('加载好友详情失败', error)

@@ -55,6 +55,21 @@ export const fetchGroupDetail = async (groupId) => {
 }
 
 /**
+ * 新建群聊
+ * @param {Object} payload
+ * @param {string} payload.groupName
+ * @param {Array<number|string>} payload.memberIds
+ */
+export const createGroup = async ({ groupName, memberIds }) => {
+  if (!groupName) throw new Error('群聊名称不能为空')
+  const ids = Array.isArray(memberIds) ? memberIds : []
+  return apiClient.post('/group/addGroup', {
+    groupName,
+    memberIds: ids,
+  })
+}
+
+/**
  * 解散群聊
  * @param {number|string} groupId
  * @returns {Promise<void>}

@@ -247,18 +247,25 @@ import GroupInviteModal from '@/components/chat/GroupInviteModal.vue'
 import GroupAnnouncementModal from '@/components/chat/GroupAnnouncementModal.vue'
 import GroupDetailModal from '@/components/chat/GroupDetailModal.vue'
 import ProfilePopover from '@/components/profile/ProfilePopover.vue'
-import { apiClient } from '@/services/apiClient'
-import { fetchNormalizedFriends } from '@/services/friendService'
+import { fetchNormalizedFriends, fetchFriendRequests, agreeFriendRequest, rejectFriendRequest } from '@/services/friendService'
 import {
   dissolveGroup,
   fetchGroupDetail,
   editGroup,
   inviteMembers,
   removeGroupMembers,
+  createGroup,
 } from '@/services/groupService'
 import { requestPasswordResetCode, recoverPassword } from '@/services/passwordRecovery'
-import { sendMessage as sendMessageAPI } from '@/services/messageService'
-import { restoreConversationByFriend, restoreConversationByGroup } from '@/services/conversationService'
+import { sendMessage as sendMessageAPI, fetchMessageList, markAsRead } from '@/services/messageService'
+import {
+  restoreConversationByFriend,
+  restoreConversationByGroup,
+  fetchSessionList,
+  toggleFavoriteSession,
+  deleteSession as deleteConversationSession,
+} from '@/services/conversationService'
+import { logout as logoutApi, getUserInfo as fetchUserInfo, updateUserInfo as updateProfile, uploadAvatar as uploadUserAvatar } from '@/services/userService'
 import SettingsPanel from '@/components/settings/SettingsPanel.vue'
 import ConversationArea from '@/components/chat/ConversationArea.vue'
 import UserProfilePanel from '@/components/settings/UserProfilePanel.vue'
@@ -435,9 +442,8 @@ const loadConversations = async ({ force = false } = {}) => {
   if (!force && conversations.value.length) return
   conversationsLoading.value = true
   try {
-    const { data } = await apiClient.get('/session/sessionList')
-    const list = Array.isArray(data) ? data : []
-    setConversations(list)
+    const list = await fetchSessionList()
+    setConversations(Array.isArray(list) ? list : [])
   } catch (error) {
     console.error('加载会话列表失败', error)
     ElMessage.error(error?.message || '会话列表加载失败，请稍后重试')
@@ -520,7 +526,7 @@ const formatTimeHint = (timestamp) => {
 
 const loadFriendRequests = async () => {
   try {
-    const { data } = await apiClient.get('/friend/friendRequestList')
+    const data = await fetchFriendRequests()
     const list = Array.isArray(data)
       ? data
       : Array.isArray(data?.friendRequestList)
@@ -621,7 +627,7 @@ const handleLogout = async () => {
   showProfileCard.value = false
   clearResetPasswordState()
   try {
-    await apiClient.post('/user/logout')
+    await logoutApi()
   } catch (error) {
     console.warn('调用退出接口失败', error)
   }
@@ -1132,17 +1138,15 @@ const loadMessages = async (conversationId) => {
   
   messagesLoading.value = true
   try {
-    const { data } = await apiClient.post('/message/messageList', {
-      param: conversationId,
-    })
-    const messageList = Array.isArray(data) ? data : []
+    const messageList = await fetchMessageList(conversationId)
+    const list = Array.isArray(messageList) ? messageList : []
     
     // 获取会话信息用于显示对方名称
     const conversation = conversations.value.find((conv) => conv.id === conversationId)
     const contactName = conversation?.displayName || conversation?.nameEn || '对方'
     
     // 转换消息格式：只处理文本消息（messageType === 1）
-    const convertedMessages = messageList
+    const convertedMessages = list
       .filter((msg) => Number(msg.messageType) === 1) // 只处理文本消息
       .map((msg, index) => {
         const direction = Number(msg.direction)
@@ -1195,7 +1199,7 @@ const selectConversation = async (id) => {
   
   // 标记该会话的消息为已读
   try {
-    await apiClient.post('/message/markAsRead', { conversationId: id })
+    await markAsRead(id)
     console.log('[ChatBreeze] Marked conversation as read:', id)
     
     // 更新本地会话的未读数为0
@@ -1255,11 +1259,8 @@ const selectToolbarAction = async (id) => {
 
 const toggleConversationFavorite = async (conversationId, nextFavorite) => {
   if (!conversationId) return false
-  const endpoint = nextFavorite ? '/session/setFavorite' : '/session/cancelFavorite'
   try {
-    const { message } = await apiClient.post(endpoint, {
-      param: conversationId,
-    })
+    const { message } = await toggleFavoriteSession(conversationId, nextFavorite)
     const target = conversations.value.find((item) => item.id === conversationId)
     if (target) {
       target.isFavorite = nextFavorite
@@ -1308,7 +1309,7 @@ const deleteConversationById = async (conversationId, { successMessage } = {}) =
   const target = conversations.value.find((item) => item.id === conversationId)
   if (!target) return false
   try {
-    await apiClient.post('/session/deleteSession', { param: conversationId })
+    await deleteConversationSession(conversationId)
     conversations.value = conversations.value.filter((item) => item.id !== conversationId)
     if (activeConversationId.value === conversationId) {
       activeConversationId.value = conversations.value[0]?.id ?? null
@@ -1826,13 +1827,10 @@ const confirmApproveFriendRequest = async () => {
   const remark = remarkDraft.value.trim()
   isProcessingFriendRequest.value = true
   try {
-    const { data, message } = await apiClient.post(
-      '/friend/agreeFriendRequest',
-      {
-        friendId,
-        remark,
-      },
-    )
+    const { data, message } = await agreeFriendRequest({
+      friendId,
+      remark,
+    })
     const target = friendRequests.incoming.find(
       (item) => item.id === request.id,
     )
@@ -1885,10 +1883,7 @@ const confirmRejectFriendRequest = async () => {
   }
   isProcessingFriendRequest.value = true
   try {
-    const { data, message } = await apiClient.post(
-      '/friend/disagreeFriendRequest',
-      { param: friendId },
-    )
+    const { data, message } = await rejectFriendRequest(friendId)
     const target = friendRequests.incoming.find(
       (item) => item.id === request.id,
     )
@@ -2007,10 +2002,7 @@ const handleCreateGroupConfirm = async ({ name, memberIds, members }) => {
   }
   isCreatingGroup.value = true
   try {
-    await apiClient.post('/group/addGroup', {
-      groupName: name,
-      memberIds: uniqueMemberIds,
-    })
+    await createGroup({ groupName: name, memberIds: uniqueMemberIds })
     showCreateGroupModal.value = false
     ElMessage.success(`已创建群聊 "${name}"`)
   } catch (error) {
@@ -2117,7 +2109,7 @@ const normalizeGender = (value) => {
 }
 
 const getUserInfo = async () => {
-  const { data } = await apiClient.get('/user/getUserInfo')
+  const data = await fetchUserInfo()
   if (data){
     currentUser.id = data.id ?? null
     currentUser.email = data.email ?? ''
@@ -2158,7 +2150,7 @@ const handleProfileUpdate = async (payload) => {
   }
   try {
     updatingProfile.value = true
-    await apiClient.post('/user/updateUserInfo', body)
+    await updateProfile(body)
     ElMessage.success('个人资料已保存')
     await getUserInfo()
     closeProfileModal()
@@ -2221,7 +2213,7 @@ const handleAvatarChange = async (file) => {
   formData.append('file', file)
   try {
     avatarUploading.value = true
-    const { data } = await apiClient.postForm('/user/uploadAvatar', formData)
+    const { data } = await uploadUserAvatar(formData)
     const nextUrl =
       typeof data === 'string'
         ? data

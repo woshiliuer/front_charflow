@@ -68,3 +68,31 @@ export const fetchNormalizedFriends = async () => {
   const list = await fetchFriends()
   return list.map((item, index) => normalizeFriend(item, index))
 }
+
+/**
+ * 好友申请列表
+ */
+export const fetchFriendRequests = async () => {
+  const { data } = await apiClient.get('/friend/friendRequestList')
+  return data || {}
+}
+
+export const agreeFriendRequest = async ({ friendId, remark }) => {
+  return apiClient.post('/friend/agreeFriendRequest', {
+    friendId,
+    remark,
+  })
+}
+
+export const rejectFriendRequest = async (friendId) => {
+  return apiClient.post('/friend/disagreeFriendRequest', { param: friendId })
+}
+
+export const fetchFriendDetail = async (friendId) => {
+  const { data } = await apiClient.post('/friend/friendDetail', { param: friendId })
+  return data ?? null
+}
+
+export const deleteFriend = async (friendId) => {
+  return apiClient.post('/friend/deleteFriend', { param: friendId })
+}
