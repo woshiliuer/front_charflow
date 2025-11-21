@@ -322,6 +322,14 @@ const normalizeConversation = (item, index) => {
   const rawId = item.id ?? item.sessionId ?? index
   const numericId = Number(rawId)
   const id = Number.isFinite(numericId) ? numericId : rawId
+  const rawFriendId =
+    item.friendId ??
+    item.targetUserId ??
+    item.userId ??
+    item.contactId ??
+    item.partnerId ??
+    item.relationUserId ??
+    null
   
   // relationId 是好友id/群聊id
   const rawRelationId = item.relationId
@@ -338,6 +346,12 @@ const normalizeConversation = (item, index) => {
   const conversationTypeRaw = Number(item.conversationType)
   const conversationType = Number.isFinite(conversationTypeRaw) ? conversationTypeRaw : 1
   const isGroupConversation = conversationType === 2
+  const friendId =
+    rawFriendId !== null && rawFriendId !== undefined
+      ? rawFriendId
+      : !isGroupConversation
+        ? relationId
+        : null
   const muteSource =
     item.isMuted ??
     item.doNotDisturb ??
@@ -361,6 +375,10 @@ const normalizeConversation = (item, index) => {
   return {
     id,
     relationId,
+    friendId,
+    targetUserId: item.targetUserId ?? friendId,
+    contactId: item.contactId ?? null,
+    partnerId: item.partnerId ?? null,
     displayName,
     nameEn: displayName,
     nameCn: item.nameCn || '',
@@ -596,12 +614,17 @@ const handleSelect = (id) => {
   }
 }
 
-const handleLogout = () => {
+const handleLogout = async () => {
   activeItem.value = 'profile'
   showProfileModal.value = false
   showResetPasswordModal.value = false
   showProfileCard.value = false
   clearResetPasswordState()
+  try {
+    await apiClient.post('/user/logout')
+  } catch (error) {
+    console.warn('调用退出接口失败', error)
+  }
   authStore.clearToken()
   ElMessage.success('已退出登录')
   router.push({ name: 'Login' })
@@ -1586,7 +1609,9 @@ const handleRemoveMemberFromGroup = async (member) => {
         if (Array.isArray(detail.members)) {
           conversation.members = detail.members
         }
-        if (typeof detail.memberCount === 'number') {
+        if (typeof detail.onlineCount === 'number') {
+          conversation.memberCount = detail.onlineCount
+        } else if (typeof detail.memberCount === 'number') {
           conversation.memberCount = detail.memberCount
         }
         if (detail.groupName) {
@@ -1679,7 +1704,7 @@ const handleSelectGroupFromContacts = (group) => {
         ...group,
         ...detail,
         id: groupId,
-        memberCount: detail?.memberCount ?? group.memberCount,
+        memberCount: detail?.onlineCount ?? detail?.memberCount ?? group.memberCount,
         introduction: detail?.introduction ?? group.introduction,
       }
     })

@@ -48,6 +48,7 @@ export const fetchGroupDetail = async (groupId) => {
     members: data.members || [],
     introduction: data.introduction,
     memberCount: data.memberCount,
+    onlineCount: data.onlineCount,
     role: data.role,
     avatarFullUrl: data.avatarFullUrl,
   }

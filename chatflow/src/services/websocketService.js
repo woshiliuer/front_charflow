@@ -14,7 +14,7 @@ class WebSocketService {
     this.connected = false
     this.reconnectAttempts = 0
     this.maxReconnectAttempts = 10
-    this.reconnectDelay = 3000
+    this.reconnectDelay = 60000
     this.subscriptions = new Map()
     this.messageHandlers = new Map()
     this.onConnectCallbacks = []
@@ -251,4 +251,3 @@ class WebSocketService {
 // 导出单例
 export const websocketService = new WebSocketService()
 export default websocketService
-

@@ -23,7 +23,7 @@
               </span>
               <span v-if="isGroupConversation" class="heading-meta">
                 <span class="meta-dot group" />
-                <span class="meta-text">{{ groupMemberCount }} 人</span>
+                <span class="meta-text">{{ onlineCountText }}</span>
               </span>
               <span v-else class="heading-meta">
                 <span class="meta-dot" :class="{ online: isOnline }" />
@@ -318,6 +318,7 @@
 <script setup>
 import { computed, ref, watch } from 'vue'
 import { fetchGroupDetail } from '@/services/groupService'
+import { apiClient } from '@/services/apiClient'
 
 const DEFAULT_AVATAR_URL =
   'https://chat-flow.oss-cn-guangzhou.aliyuncs.com/default-avatar/default-person.jpg'
@@ -352,12 +353,17 @@ const loadingGroupDetail = ref(false)
 const showRemoveMemberDialog = ref(false)
 const removeMemberSearch = ref('')
 const selectedMembersToRemove = ref([])
+const friendDetail = ref(null)
+const loadingFriendDetail = ref(false)
 
 const avatarUrl = computed(() => {
-  return props.conversation?.avatar || DEFAULT_AVATAR_URL
+  const avatarFromFriend = friendDetail.value?.avatarFullUrl
+  return avatarFromFriend || props.conversation?.avatar || DEFAULT_AVATAR_URL
 })
 
 const displayName = computed(() => {
+  if (friendDetail.value?.remark) return friendDetail.value.remark
+  if (friendDetail.value?.nickname) return friendDetail.value.nickname
   return (
     props.conversation?.displayName ||
     props.conversation?.nameCn ||
@@ -372,15 +378,27 @@ const isGroupConversation = computed(
     props.conversation?.conversationType === 2,
 )
 
-const groupMemberCount = computed(() => {
+const onlineCount = computed(() => {
   if (!isGroupConversation.value) return 0
-  if (typeof groupDetail.value?.memberCount === 'number') return groupDetail.value.memberCount
-  if (typeof props.conversation?.memberCount === 'number') return props.conversation.memberCount
-  return groupMembers.value.length
+  if (typeof groupDetail.value?.onlineCount === 'number') return groupDetail.value.onlineCount
+  return null
+})
+
+const onlineCountText = computed(() => {
+  if (!isGroupConversation.value) return ''
+  if (typeof onlineCount.value === 'number') {
+    return `${onlineCount.value} 人在线`
+  }
+  const fallback = groupMembers.value.length
+  return fallback ? `${fallback} 人` : '暂无人数'
 })
 
 const isOnline = computed(() => {
-  const status = props.conversation?.onlineStatus ?? props.conversation?.online ?? props.conversation?.status
+  const status =
+    friendDetail.value?.status ??
+    props.conversation?.onlineStatus ??
+    props.conversation?.online ??
+    props.conversation?.status
   if (status === true || status === 'online') return true
   if (status === false || status === 'offline') return false
   const numeric = Number(status)
@@ -521,6 +539,39 @@ const removableMembers = computed(() => {
   })
 })
 
+const directFriendId = computed(() => {
+  if (isGroupConversation.value) return null
+  return (
+    props.conversation?.friendId ??
+    props.conversation?.targetUserId ??
+    props.conversation?.userId ??
+    props.conversation?.contactId ??
+    props.conversation?.partnerId ??
+    null
+  )
+})
+
+const loadFriendDetail = async () => {
+  if (isGroupConversation.value || !directFriendId.value || !props.visible) {
+    console.log("没调用到")
+    console.log(directFriendId.value)
+    return
+  }
+  loadingFriendDetail.value = true
+  try {
+     console.log("调用到了")
+    const { data } = await apiClient.post('/friend/friendDetail', {
+      param: directFriendId.value,
+    })
+    friendDetail.value = data ?? null
+  } catch (error) {
+    console.warn('加载好友详情失败', error)
+    friendDetail.value = null
+  } finally {
+    loadingFriendDetail.value = false
+  }
+}
+
 // 加载群组详情
 const loadGroupDetail = async () => {
   if (!isGroupConversation.value || !props.conversation?.relationId) {
@@ -568,6 +619,20 @@ watch(
   (newVisible) => {
     if (newVisible && isGroupConversation.value) {
       loadGroupDetail()
+    }
+  },
+  { immediate: true },
+)
+
+watch(
+  () => [props.visible, directFriendId.value],
+  () => {
+    
+    if (props.visible) {
+console.log("调用详情接口前")
+      loadFriendDetail()
+    } else {
+      friendDetail.value = null
     }
   },
   { immediate: true },
