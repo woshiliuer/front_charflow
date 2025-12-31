@@ -51,7 +51,11 @@
         >
           <div class="message-avatar">
             <img
-              :src="message.role === 'self' ? currentUser.avatarFullUrl : selectedConversation.avatar"
+              :src="
+                message.role === 'self'
+                  ? currentUser.avatarFullUrl
+                  : message.avatarFullUrl || selectedConversation.avatar
+              "
               :alt="message.role === 'self' ? currentUser.nickname : message.author"
             />
           </div>

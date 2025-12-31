@@ -646,14 +646,20 @@ const activeConversationId = ref(null)
 
 // 处理接收到的消息
 const handleReceivedMessage = (message) => {
-  const conversationId = message.conversationId || message.sessionId || message.to || message.from
+  const conversationId =
+    message.conversationId ||
+    message.sessionId ||
+    message.to ||
+    message.from ||
+    message.senderId
   
   if (!conversationId) {
     console.warn('无法确定会话ID，忽略消息:', message)
     return
   }
 
-  const isFromMe = String(message.from) === String(currentUser.id)
+  const senderId = message.from || message.senderId
+  const isFromMe = String(senderId) === String(currentUser.id)
   
   // 如果是当前查看的会话，直接添加消息
   if (activeConversationId.value && (
@@ -719,6 +725,9 @@ const addMessageToThread = (conversationId, message, isFromMe) => {
     if (message.id && !existingMessage.id) {
       existingMessage.id = message.id
     }
+    if (message.avatarFullUrl) {
+      existingMessage.avatarFullUrl = message.avatarFullUrl
+    }
     if (message.sequence && !existingMessage.sequence) {
       existingMessage.sequence = message.sequence
     }
@@ -734,6 +743,7 @@ const addMessageToThread = (conversationId, message, isFromMe) => {
     role,
     author,
     text: message.text || message.content || '',
+    avatarFullUrl: message.avatarFullUrl || '',
     time: formatMessageTime(message.sendTime || Date.now()),
     sendTime: message.sendTime || Date.now(),
     sequence: message.sequence,
@@ -1159,6 +1169,7 @@ const loadMessages = async (conversationId) => {
           role,
           author,
           text: msg.content || '',
+          avatarFullUrl: msg.avatarFullUrl || '',
           time: formatMessageTime(msg.sendTime),
           sendTime: msg.sendTime,
           sequence: msg.sequence,

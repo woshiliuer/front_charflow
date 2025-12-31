@@ -9,7 +9,7 @@
         <button
           type="button"
           class="friend-modal-close"
-          aria-label="閸忔娊妫存總钘夊几鐠囷附鍎?
+          aria-label="关闭模态框"
           @click="emitClose"
         >
           &times;
@@ -24,30 +24,30 @@
             <span v-else>{{ avatarInitial }}</span>
           </div>
           <div class="friend-modal-title">
-            <h3>{{ resolvedFriend.remark || '閺嗗倹妫ゆ径鍥ㄦ暈' }}</h3>
+            <h3>{{ resolvedFriend.remark || '好友信息' }}</h3>
           </div>
         </header>
         <section class="friend-modal-body">
           <div v-if="isLoading" class="friend-modal-feedback">
             <span class="spinner" aria-hidden="true" />
-            <span>婵傝棄寮告穱鈩冧紖閸旂姾娴囨稉顓涒偓?/span>
+            <span>正在加载详细信息...</span>
           </div>
           <div v-else-if="detailError" class="friend-modal-feedback error">
-            <span aria-hidden="true">閳跨媴绗?/span>
+            <span aria-hidden="true">错误</span>
             <p>{{ detailError }}</p>
           </div>
           <dl v-else>
             <div class="friend-modal-row">
-              <dt>闁喚顔?/dt>
-              <dd>{{ resolvedFriend.email || '閺堫亝褰佹笟娑㈠仏缁? }}</dd>
+              <dt>邮箱</dt>
+              <dd>{{ resolvedFriend.email || '暂无邮箱' }}</dd>
             </div>
             <div class="friend-modal-row">
-              <dt>閺勭數袨</dt>
-              <dd>{{ resolvedFriend.nickname || '閺堫亜锝為崘娆愭█缁? }}</dd>
+              <dt>昵称</dt>
+              <dd>{{ resolvedFriend.nickname || '暂无昵称' }}</dd>
             </div>
             <div class="friend-modal-row">
-              <dt>缁涙儳鎮?/dt>
-              <dd>{{ resolvedFriend.signature || '鏉╂瑤缍呴張瀣几鏉╂ɑ鐥呴張澶婂晸缁涙儳鎮? }}</dd>
+              <dt>个性签名</dt>
+              <dd>{{ resolvedFriend.signature || '这个人很懒，什么都没有留下' }}</dd>
             </div>
           </dl>
         </section>
@@ -58,7 +58,7 @@
             :disabled="isDeleting"
             @click="handleDelete"
           >
-            {{ isDeleting ? '閸掔娀娅庢稉顓涒偓? : '閸掔娀娅庢總钘夊几' }}
+            {{ isDeleting ? '删除中...' : '删除好友' }}
           </button>
           <button
             type="button"
@@ -66,7 +66,7 @@
             :disabled="sendingConversation"
             @click="emitSend"
           >
-            {{ sendingConversation ? '濮濓絽婀崣鎴ｆ崳娴兼俺鐦?..' : '閸欐垶绉烽幁? }}
+            {{ sendingConversation ? '正在发起会话...' : '发起会话' }}
           </button>
         </footer>
       </div>
@@ -136,7 +136,7 @@ const avatarInitial = computed(() => {
     resolvedFriend.value.signature ||
     ''
   const char = source.trim().charAt(0)
-  return char ? char.toUpperCase() : '閸?
+  return char ? char.toUpperCase() : ''
 })
 
 const emitClose = () => {
@@ -157,7 +157,7 @@ const fetchDetail = async () => {
   if (!props.visible || !friend.value) return
   const friendId = friend.value.userId ?? friend.value.id
   if (friendId === undefined || friendId === null) {
-    detailError.value = '閺堫亝澹橀崚鏉裤偨閸欏鐖ｇ拠鍡礉閺冪姵纭堕崝鐘烘祰鐠囷附鍎?
+    detailError.value = '好友ID无效，无法获取详细信息'
     return
   }
   detailError.value = ''
@@ -165,7 +165,7 @@ const fetchDetail = async () => {
   try {
     detail.value = await fetchFriendDetail(friendId)
   } catch (error) {
-    detailError.value = error?.message || '婵傝棄寮哥拠锔藉剰閸旂姾娴囨径杈Е閿涘矁顕粙宥呮倵闁插秷鐦?
+    detailError.value = error?.message || '获取好友详细信息失败'
     detail.value = null
   } finally {
     isLoading.value = false
@@ -188,17 +188,17 @@ const handleDelete = async () => {
   if (isDeleting.value || !friend.value) return
   const friendId = friend.value.userId ?? friend.value.id
   if (friendId === undefined || friendId === null) {
-    ElMessage.error('閺堫亝澹橀崚鏉裤偨閸欏鐖ｇ拠鍡礉閺冪姵纭堕崚鐘绘珟')
+    ElMessage.error('好友ID无效，无法删除')
     return
   }
   try {
     await ElMessageBox.confirm(
-      '閸掔娀娅庨崥搴＄殺閺冪姵纭舵稉搴ゎ嚉婵傝棄寮哥紒褏鐢婚懕濠傘亯閿涘瞼鈥樼€规俺顩﹂崚鐘绘珟閸氭绱?,
-      '閸掔娀娅庢總钘夊几',
+      '确定要删除这个好友吗？此操作将移除你们的好友关系',
+      '删除好友',
       {
         type: 'warning',
-        confirmButtonText: '绾喛顓婚崚鐘绘珟',
-        cancelButtonText: '閸欐牗绉?,
+        confirmButtonText: '确定删除',
+        cancelButtonText: '取消',
         customClass: 'friend-delete-confirm',
       },
     )
@@ -207,7 +207,9 @@ const handleDelete = async () => {
   }
   isDeleting.value = true
   try {
-        await deleteFriend(friendId)\n    ElMessage.success('好友已删除')\n    emit('delete', friendId)
+    await deleteFriend(friendId)
+    ElMessage.success('好友已删除')
+    emit('delete', friendId)
     emitClose()
   } finally {
     isDeleting.value = false
@@ -479,4 +481,3 @@ const handleDelete = async () => {
   box-shadow: 0 12px 22px rgba(31, 53, 38, 0.18);
 }
 </style>
-

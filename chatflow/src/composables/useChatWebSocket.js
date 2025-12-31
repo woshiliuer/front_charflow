@@ -166,6 +166,9 @@ export function useChatWebSocket(options = {}) {
       if (message.status !== undefined) {
         existingMessage.status = message.status
       }
+      if (message.avatarFullUrl) {
+        existingMessage.avatarFullUrl = message.avatarFullUrl
+      }
       return
     }
 
@@ -174,6 +177,7 @@ export function useChatWebSocket(options = {}) {
       role,
       author,
       text: message.text || message.content || '',
+      avatarFullUrl: message.avatarFullUrl || '',
       time: formatMessageTime(message.sendTime || Date.now()),
       sendTime: message.sendTime || Date.now(),
       sequence: message.sequence,
