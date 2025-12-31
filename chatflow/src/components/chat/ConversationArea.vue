@@ -66,13 +66,64 @@
       </ul>
 
       <footer class="composer">
-        <input
+        <div class="composer-input" ref="composerRootRef">
+          <input
           type="text"
           placeholder="输入消息..."
           v-model="localDraft"
           @input="handleInput"
+          ref="composerInputRef"
         />
-        <button type="button" @click="emitSend">发送</button>
+          <button
+            type="button"
+            class="emoji-button"
+            @click.stop="toggleEmojiPicker"
+            aria-label="选择表情"
+            :aria-expanded="showEmojiPicker"
+          >
+            😀
+          </button>
+          <div
+            v-if="showEmojiPicker"
+            class="emoji-picker"
+            role="dialog"
+            aria-label="表情选择"
+            @click.stop
+          >
+            <div v-if="recentEmojis.length > 0" class="emoji-section">
+              <h4 class="emoji-section-title">最近使用</h4>
+              <div class="emoji-grid">
+                <button
+                  v-for="emoji in recentEmojis"
+                  :key="'recent-' + emoji"
+                  type="button"
+                  class="emoji-item"
+                  @click="handleSelectEmoji(emoji)"
+                  :title="emoji"
+                >
+                  {{ emoji }}
+                </button>
+              </div>
+            </div>
+
+            <div class="emoji-section">
+              <h4 class="emoji-section-title">所有表情</h4>
+              <div class="emoji-grid">
+                <button
+                  v-for="emoji in emojiList"
+                  :key="emoji"
+                  type="button"
+                  class="emoji-item"
+                  @click="handleSelectEmoji(emoji)"
+                  :title="emoji"
+                >
+                  {{ emoji }}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+        <button type="button" class="send-button" @click="emitSend">发送</button>
       </footer>
       <ConversationSettingsDrawer
         :visible="showSettingsDrawer"
@@ -100,7 +151,7 @@
 </template>
 
 <script setup>
-import { ref, watch, computed } from 'vue'
+import { ref, watch, computed, onMounted, onBeforeUnmount, nextTick } from 'vue'
 import ConversationSettingsDrawer from './ConversationSettingsDrawer.vue'
 
 const props = defineProps({
@@ -129,6 +180,67 @@ const emit = defineEmits([
 
 const localDraft = ref(props.draft)
 const showSettingsDrawer = ref(false)
+const showEmojiPicker = ref(false)
+const composerInputRef = ref(null)
+const composerRootRef = ref(null)
+const recentEmojis = ref([])
+
+const RECENT_EMOJIS_KEY = 'chatflow_recent_emojis'
+const MAX_RECENT = 10
+
+const emojiList = [
+  '😀',
+  '😃',
+  '😁',
+  '😆',
+  '😅',
+  '🤣',
+  '😂',
+  '🙂',
+  '🙃',
+  '🫠',
+  '😉',
+  '😊',
+  '😇',
+  '🥰',
+  '😍',
+  '🤩',
+  '😘',
+  '😗',
+  '😚',
+  '🥲',
+  '😛',
+  '😋',
+  '🤪',
+  '🤭',
+  '🤔',
+  '🫡',
+  '🤨',
+  '😐',
+  '😑',
+  '😮‍💨',
+  '🙄',
+  '😒',
+  '😏',
+  '😔',
+  '😪',
+  '😴',
+  '😷',
+  '🤕',
+  '🤢',
+  '😵‍💫',
+  '🤧',
+  '🥵',
+  '🥶',
+  '🥴',
+  '🥳',
+  '😯',
+  '😕',
+  '😰',
+  '😨',
+  '😥',
+  '😢',
+]
 
 watch(
   () => props.draft,
@@ -143,9 +255,77 @@ const handleInput = () => {
   emit('update:draft', localDraft.value)
 }
 
+const toggleEmojiPicker = () => {
+  showEmojiPicker.value = !showEmojiPicker.value
+}
+
+const insertAtCaret = (value) => {
+  const inputEl = composerInputRef.value
+  if (!inputEl) {
+    localDraft.value += value
+    emit('update:draft', localDraft.value)
+    return
+  }
+
+  const start = inputEl.selectionStart ?? localDraft.value.length
+  const end = inputEl.selectionEnd ?? localDraft.value.length
+  const before = localDraft.value.slice(0, start)
+  const after = localDraft.value.slice(end)
+  const nextValue = `${before}${value}${after}`
+
+  localDraft.value = nextValue
+  emit('update:draft', localDraft.value)
+
+  nextTick(() => {
+    inputEl.focus()
+    const nextPos = start + value.length
+    inputEl.setSelectionRange(nextPos, nextPos)
+  })
+}
+
+const handleSelectEmoji = (emoji) => {
+  insertAtCaret(emoji)
+  showEmojiPicker.value = false
+
+  // 更新最近使用的表情
+  const index = recentEmojis.value.indexOf(emoji)
+  if (index !== -1) {
+    recentEmojis.value.splice(index, 1)
+  }
+  recentEmojis.value.unshift(emoji)
+  if (recentEmojis.value.length > MAX_RECENT) {
+    recentEmojis.value.pop()
+  }
+  localStorage.setItem(RECENT_EMOJIS_KEY, JSON.stringify(recentEmojis.value))
+}
+
 const emitSend = () => {
   emit('send')
 }
+
+const handleOutsideClick = (event) => {
+  if (!showEmojiPicker.value) return
+  const root = composerRootRef.value
+  if (root && event?.target && root.contains(event.target)) return
+  showEmojiPicker.value = false
+}
+
+onMounted(() => {
+  document.addEventListener('click', handleOutsideClick)
+  // 加载最近使用的表情
+  const saved = localStorage.getItem(RECENT_EMOJIS_KEY)
+  if (saved) {
+    try {
+      recentEmojis.value = JSON.parse(saved)
+    } catch (e) {
+      console.warn('Failed to parse recent emojis', e)
+    }
+  }
+})
+
+onBeforeUnmount(() => {
+  document.removeEventListener('click', handleOutsideClick)
+})
 
 const isMuted = computed(() => Boolean(props.selectedConversation?.isMuted))
 const isFavorite = computed(() => Boolean(props.selectedConversation?.isFavorite))
@@ -472,41 +652,154 @@ const handleDissolveGroup = () => {
 .composer {
   margin-top: 32px;
   display: flex;
+  align-items: center;
   gap: 12px;
+}
+
+.composer-input {
+  position: relative;
+  flex: 1;
+  display: flex;
+  align-items: center;
+  height: 46px;
+  background: #f7f7f7;
+  border: 1px solid #ededed;
+  border-radius: 18px;
+  padding: 0 10px;
+  box-shadow: 0 10px 18px rgba(0, 0, 0, 0.06);
+}
+
+.composer-input:focus-within {
+  border-color: #d9d9d9;
+  box-shadow: 0 0 0 4px rgba(0, 0, 0, 0.06);
 }
 
 .composer input {
   flex: 1;
-  border: 1px solid #d3e4d9;
-  border-radius: 14px;
-  padding: 12px 16px;
-  font-size: 14px;
-  color: #1f3526;
-  background: rgba(255, 255, 255, 0.92);
-}
-
-.composer input:focus {
-  outline: none;
-  border-color: #34c073;
-  box-shadow: 0 0 0 3px rgba(52, 192, 115, 0.18);
-}
-
-.composer button {
+  height: 100%;
   border: none;
-  background: linear-gradient(135deg, #32c374, #1da368);
+  outline: none;
+  padding: 0 44px 0 6px;
+  font-size: 16px;
+  color: #1f1f1f;
+  background: transparent;
+}
+
+.composer input::placeholder {
+  font-size: 16px;
+}
+
+.emoji-button {
+  position: absolute;
+  right: 8px;
+  width: 36px;
+  height: 36px;
+  border: none;
+  border-radius: 12px;
+  background: transparent;
+  cursor: pointer;
+  font-size: 20px;
+  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: #4a4a4a;
+  transition: background-color 0.15s ease;
+}
+
+.emoji-button:hover {
+  background: #f2f2f2;
+}
+
+.emoji-picker {
+  position: absolute;
+  left: 0;
+  bottom: calc(100% + 12px);
+  width: 720px;
+  max-width: calc(100vw - 120px);
+  max-height: 360px;
+  overflow-y: auto;
+  background: #ffffff;
+  border: 1px solid #e5e5e5;
+  border-radius: 8px;
+  padding: 24px 16px;
+  box-shadow: 0 15px 45px rgba(0, 0, 0, 0.1);
+  z-index: 2000;
+  scrollbar-width: thin;
+  scrollbar-color: #ddd transparent;
+}
+
+.emoji-picker::-webkit-scrollbar {
+  width: 5px;
+}
+
+.emoji-picker::-webkit-scrollbar-thumb {
+  background-color: #ccc;
+  border-radius: 10px;
+}
+
+.emoji-section {
+  margin-bottom: 24px;
+}
+
+.emoji-section:last-child {
+  margin-bottom: 0;
+}
+
+.emoji-section-title {
+  margin: 0 0 12px 8px;
+  font-size: 13px;
+  color: #8e8e8e;
+  font-weight: 400;
+}
+
+.emoji-grid {
+  display: grid;
+  grid-template-columns: repeat(10, 1fr);
+  gap: 2px;
+}
+
+.emoji-item {
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  font-size: 34px;
+  width: 48px;
+  height: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+  transition: background-color 0.1s;
+  padding: 0;
+  line-height: 1;
+}
+
+.emoji-item:hover {
+  background: #e1e1e1;
+}
+
+.emoji-item:active {
+  background: #d4d4d4;
+}
+
+.send-button {
+  border: none;
+  height: 46px;
+  background: #2bb673;
   color: #ffffff;
   border-radius: 14px;
-  padding: 0 18px;
+  padding: 0 22px;
   font-size: 14px;
   font-weight: 600;
   cursor: pointer;
-  box-shadow: 0 12px 20px rgba(45, 176, 103, 0.22);
-  transition: transform 0.2s ease, box-shadow 0.2s ease;
+  box-shadow: 0 10px 18px rgba(0, 0, 0, 0.12);
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
 }
 
-.composer button:hover {
+.send-button:hover {
   transform: translateY(-2px);
-  box-shadow: 0 16px 24px rgba(45, 176, 103, 0.28);
+  box-shadow: 0 14px 22px rgba(0, 0, 0, 0.16);
 }
 
 @media (max-width: 1024px) {
