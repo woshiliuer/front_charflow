@@ -119,6 +119,8 @@
       :invite-enabled="canInviteGroupMembers"
       @update:draft="(v) => (draft = v)"
       @send="handleSendMessage"
+      @send-file="handleSendFileMessage"
+      @send-emoji-file="handleSendEmojiFile"
       @toggle-mute="handleToggleConversationMute"
       @toggle-favorite="handleToggleConversationFavorite"
       @delete-conversation="handleDeleteConversationFromDrawer"
@@ -257,7 +259,7 @@ import {
   createGroup,
 } from '@/services/groupService'
 import { requestPasswordResetCode, recoverPassword } from '@/services/passwordRecovery'
-import { sendMessage as sendMessageAPI, fetchMessageList, markAsRead } from '@/services/messageService'
+import { sendMessage as sendMessageAPI, fetchMessageList, markAsRead, uploadMessageFile } from '@/services/messageService'
 import {
   restoreConversationByFriend,
   restoreConversationByGroup,
@@ -406,6 +408,72 @@ const normalizeConversation = (item, index) => {
     isFavorite: favoriteFlag,
     isMuted: resolvedMute,
     clock: formatConversationClock(sendTime),
+  }
+}
+
+const handleSendEmojiFile = async (payload) => {
+  const messageFile = payload?.messageFile
+  if (!messageFile) return
+
+  if (!activeConversationId.value) return
+  const conversationId = activeConversationId.value
+  const conversation = conversations.value.find((conv) => conv.id === conversationId)
+  if (!conversation) {
+    ElMessage.warning('会话不存在')
+    return
+  }
+
+  const tempId = `temp_emoji_${Date.now()}`
+  const tempMessage = {
+    id: tempId,
+    role: 'self',
+    author: '我',
+    text: messageFile.fileName || '[表情]',
+    messageType: 2,
+    messageFile,
+    time: formatMessageTime(Date.now()),
+    sendTime: Date.now(),
+    sequence: null,
+    status: 0,
+  }
+
+  if (!messagesByConversation.value[conversationId]) {
+    messagesByConversation.value[conversationId] = []
+  }
+  messagesByConversation.value[conversationId].push(tempMessage)
+
+  try {
+    const response = await sendMessageAPI({
+      conversationId,
+      content: messageFile.fileName || '[表情]',
+      messageType: 2,
+      messageFile,
+    })
+
+    const messageIndex = messagesByConversation.value[conversationId].findIndex((msg) => msg.id === tempId)
+    if (messageIndex !== -1) {
+      messagesByConversation.value[conversationId][messageIndex].status = 1
+      messagesByConversation.value[conversationId][messageIndex].messageFile = response?.messageFile || messageFile
+      if (response?.id) {
+        messagesByConversation.value[conversationId][messageIndex].id = response.id
+      }
+      if (response?.sequence) {
+        messagesByConversation.value[conversationId][messageIndex].sequence = response.sequence
+      }
+    }
+
+    conversation.snippet = '[图片]'
+    conversation.content = '[图片]'
+    conversation.sendTime = Date.now()
+    conversation.clock = formatConversationClock(conversation.sendTime)
+    sortConversations()
+  } catch (error) {
+    console.error('[ChatBreeze] Failed to send emoji file:', error)
+    ElMessage.error(error?.message || '发送表情失败，请重试')
+    const messageIndex = messagesByConversation.value[conversationId].findIndex((msg) => msg.id === tempId)
+    if (messageIndex !== -1) {
+      messagesByConversation.value[conversationId][messageIndex].status = -1
+    }
   }
 }
 
@@ -743,6 +811,8 @@ const addMessageToThread = (conversationId, message, isFromMe) => {
     role,
     author,
     text: message.text || message.content || '',
+    messageType: message.messageType ?? 1,
+    messageFile: message.messageFile,
     avatarFullUrl: message.avatarFullUrl || '',
     time: formatMessageTime(message.sendTime || Date.now()),
     sendTime: message.sendTime || Date.now(),
@@ -831,6 +901,8 @@ const handleSendMessage = async () => {
     role: 'self',
     author: '我',
     text: messageText,
+    messageType: 1,
+    messageFile: null,
     time: formatMessageTime(Date.now()),
     sendTime: Date.now(),
     sequence: null,
@@ -892,6 +964,74 @@ const handleSendMessage = async () => {
       messagesByConversation.value[conversationId][messageIndex].status = -1
     }
     draft.value = originalDraft
+  }
+}
+
+const handleSendFileMessage = async (file) => {
+  if (!file || !activeConversationId.value) return
+  const conversationId = activeConversationId.value
+  const conversation = conversations.value.find((conv) => conv.id === conversationId)
+  if (!conversation) {
+    ElMessage.warning('会话不存在')
+    return
+  }
+
+  const tempId = `temp_file_${Date.now()}`
+  const tempMessage = {
+    id: tempId,
+    role: 'self',
+    author: '我',
+    text: file.name || '[文件]',
+    messageType: 2,
+    messageFile: null,
+    time: formatMessageTime(Date.now()),
+    sendTime: Date.now(),
+    sequence: null,
+    status: 0,
+  }
+
+  if (!messagesByConversation.value[conversationId]) {
+    messagesByConversation.value[conversationId] = []
+  }
+  messagesByConversation.value[conversationId].push(tempMessage)
+
+  try {
+    const formData = new FormData()
+    formData.append('file', file)
+    const uploadRes = await uploadMessageFile(formData)
+    const messageFile = uploadRes?.data ?? null
+
+    const response = await sendMessageAPI({
+      conversationId,
+      content: file.name || '[文件]',
+      messageType: 2,
+      messageFile,
+    })
+
+    const messageIndex = messagesByConversation.value[conversationId].findIndex((msg) => msg.id === tempId)
+    if (messageIndex !== -1) {
+      messagesByConversation.value[conversationId][messageIndex].status = 1
+      messagesByConversation.value[conversationId][messageIndex].messageFile = response?.messageFile || messageFile
+      if (response?.id) {
+        messagesByConversation.value[conversationId][messageIndex].id = response.id
+      }
+      if (response?.sequence) {
+        messagesByConversation.value[conversationId][messageIndex].sequence = response.sequence
+      }
+    }
+
+    conversation.snippet = '[图片]'
+    conversation.content = '[图片]'
+    conversation.sendTime = Date.now()
+    conversation.clock = formatConversationClock(conversation.sendTime)
+    sortConversations()
+  } catch (error) {
+    console.error('[ChatBreeze] Failed to send file message:', error)
+    ElMessage.error(error?.message || '文件发送失败，请重试')
+    const messageIndex = messagesByConversation.value[conversationId].findIndex((msg) => msg.id === tempId)
+    if (messageIndex !== -1) {
+      messagesByConversation.value[conversationId][messageIndex].status = -1
+    }
   }
 }
 
@@ -1155,10 +1295,7 @@ const loadMessages = async (conversationId) => {
     const conversation = conversations.value.find((conv) => conv.id === conversationId)
     const contactName = conversation?.displayName || conversation?.nameEn || '对方'
     
-    // 转换消息格式：只处理文本消息（messageType === 1）
-    const convertedMessages = list
-      .filter((msg) => Number(msg.messageType) === 1) // 只处理文本消息
-      .map((msg, index) => {
+    const convertedMessages = list.map((msg, index) => {
         const direction = Number(msg.direction)
         // direction: 1=USER_TO_FRIEND(我发出的), 2=FRIEND_TO_USER(收到的)
         const role = direction === 1 ? 'self' : 'contact'
@@ -1169,6 +1306,8 @@ const loadMessages = async (conversationId) => {
           role,
           author,
           text: msg.content || '',
+          messageType: msg.messageType ?? 1,
+          messageFile: msg.messageFile,
           avatarFullUrl: msg.avatarFullUrl || '',
           time: formatMessageTime(msg.sendTime),
           sendTime: msg.sendTime,

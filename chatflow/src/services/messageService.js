@@ -30,8 +30,13 @@ export const sendMessage = async (messageData) => {
     conversationId: messageData.conversationId,
     content: messageData.content,
     messageType: messageData.messageType || 1, // 默认文本消息
+    messageFile: messageData.messageFile,
   })
   return data
+}
+
+export const uploadMessageFile = async (formData) => {
+  return apiClient.postForm('/file/message/upload', formData)
 }
 
 /**

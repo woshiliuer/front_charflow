@@ -59,8 +59,29 @@
               :alt="message.role === 'self' ? currentUser.nickname : message.author"
             />
           </div>
-          <div class="bubble">
-            <p>{{ message.text }}</p>
+          <div class="bubble" :class="{ 'bubble-image': Number(message.messageType) === 2 }">
+            <template v-if="Number(message.messageType) === 2 && message.messageFile?.fullFilePath">
+              <img
+                class="message-file-image"
+                :src="message.messageFile.fullFilePath"
+                :alt="message.messageFile.fileName || 'image'"
+              />
+            </template>
+            <p v-else class="message-text">
+              <template
+                v-for="(segment, index) in parseMessageSegments(message.text)"
+                :key="index"
+              >
+                <span v-if="segment.type === 'text'">{{ segment.value }}</span>
+                <span v-else-if="segment.type === 'unicode'">{{ segment.value }}</span>
+                <img
+                  v-else
+                  class="message-emoji-image"
+                  :src="segment.src"
+                  :alt="segment.alt"
+                />
+              </template>
+            </p>
           </div>
         </li>
       </ul>
@@ -77,6 +98,21 @@
           <button
             type="button"
             class="emoji-button"
+            @click.stop="triggerFilePick"
+            aria-label="发送图片"
+          >
+            📎
+          </button>
+          <input
+            ref="fileInputRef"
+            type="file"
+            accept="image/*"
+            class="hidden-file-input"
+            @change="handleFilePicked"
+          />
+          <button
+            type="button"
+            class="emoji-button"
             @click.stop="toggleEmojiPicker"
             aria-label="选择表情"
             :aria-expanded="showEmojiPicker"
@@ -90,34 +126,43 @@
             aria-label="表情选择"
             @click.stop
           >
-            <div v-if="recentEmojis.length > 0" class="emoji-section">
-              <h4 class="emoji-section-title">最近使用</h4>
-              <div class="emoji-grid">
+            <div class="emoji-section">
+              <h4 class="emoji-section-title">表情包</h4>
+              <div class="emoji-pack-bar">
                 <button
-                  v-for="emoji in recentEmojis"
-                  :key="'recent-' + emoji"
+                  v-for="pack in emojiPacks"
+                  :key="pack.id"
                   type="button"
-                  class="emoji-item"
-                  @click="handleSelectEmoji(emoji)"
-                  :title="emoji"
+                  class="emoji-pack-item"
+                  :class="{ active: String(pack.id) === String(selectedEmojiPackId) }"
+                  @click="handleSelectEmojiPack(pack)"
+                  :title="pack.name"
                 >
-                  {{ emoji }}
+                  <img
+                    v-if="pack?.cover?.fullFilePath"
+                    :src="pack.cover.fullFilePath"
+                    :alt="pack.name"
+                  />
+                  <span v-else class="emoji-pack-fallback">{{ pack.name?.slice?.(0, 1) || '😀' }}</span>
                 </button>
               </div>
-            </div>
-
-            <div class="emoji-section">
-              <h4 class="emoji-section-title">所有表情</h4>
+              <h4 class="emoji-section-title">{{ selectedEmojiPackName }}</h4>
               <div class="emoji-grid">
                 <button
-                  v-for="emoji in emojiList"
-                  :key="emoji"
+                  v-for="emoji in selectedEmojiItems"
+                  :key="emoji.id"
                   type="button"
                   class="emoji-item"
-                  @click="handleSelectEmoji(emoji)"
-                  :title="emoji"
+                  @click="handleSelectEmojiItem(emoji)"
+                  :title="emoji.name"
                 >
-                  {{ emoji }}
+                  <template v-if="emoji.type === 1">{{ emoji.unicodeVal }}</template>
+                  <img
+                    v-else
+                    class="emoji-image"
+                    :src="emoji?.emojiItemFile?.fullFilePath"
+                    :alt="emoji.name"
+                  />
                 </button>
               </div>
             </div>
@@ -153,6 +198,7 @@
 <script setup>
 import { ref, watch, computed, onMounted, onBeforeUnmount, nextTick } from 'vue'
 import ConversationSettingsDrawer from './ConversationSettingsDrawer.vue'
+import { apiClient } from '@/services/apiClient'
 
 const props = defineProps({
   highlights: { type: Array, required: true },
@@ -166,6 +212,8 @@ const props = defineProps({
 const emit = defineEmits([
   'update:draft',
   'send',
+  'send-file',
+  'send-emoji-file',
   'toggle-mute',
   'toggle-favorite',
   'delete-conversation',
@@ -183,64 +231,26 @@ const showSettingsDrawer = ref(false)
 const showEmojiPicker = ref(false)
 const composerInputRef = ref(null)
 const composerRootRef = ref(null)
-const recentEmojis = ref([])
+const fileInputRef = ref(null)
 
-const RECENT_EMOJIS_KEY = 'chatflow_recent_emojis'
-const MAX_RECENT = 10
+const emojiPacks = ref([])
+const selectedEmojiPackId = ref(null)
+const emojiItemsByPackId = ref({})
+const emojiItemDict = ref({})
+const emojiPacksLoading = ref(false)
+const emojiItemsLoading = ref(false)
 
-const emojiList = [
-  '😀',
-  '😃',
-  '😁',
-  '😆',
-  '😅',
-  '🤣',
-  '😂',
-  '🙂',
-  '🙃',
-  '🫠',
-  '😉',
-  '😊',
-  '😇',
-  '🥰',
-  '😍',
-  '🤩',
-  '😘',
-  '😗',
-  '😚',
-  '🥲',
-  '😛',
-  '😋',
-  '🤪',
-  '🤭',
-  '🤔',
-  '🫡',
-  '🤨',
-  '😐',
-  '😑',
-  '😮‍💨',
-  '🙄',
-  '😒',
-  '😏',
-  '😔',
-  '😪',
-  '😴',
-  '😷',
-  '🤕',
-  '🤢',
-  '😵‍💫',
-  '🤧',
-  '🥵',
-  '🥶',
-  '🥴',
-  '🥳',
-  '😯',
-  '😕',
-  '😰',
-  '😨',
-  '😥',
-  '😢',
-]
+const selectedEmojiPackName = computed(() => {
+  const pack = emojiPacks.value.find((item) => String(item.id) === String(selectedEmojiPackId.value))
+  return pack?.name ?? ''
+})
+
+const selectedEmojiItems = computed(() => {
+  const key = selectedEmojiPackId.value
+  if (!key) return []
+  return emojiItemsByPackId.value[key] ?? []
+})
+
 
 watch(
   () => props.draft,
@@ -255,8 +265,57 @@ const handleInput = () => {
   emit('update:draft', localDraft.value)
 }
 
-const toggleEmojiPicker = () => {
+const loadEmojiPacks = async () => {
+  if (emojiPacksLoading.value) return
+  if (emojiPacks.value.length > 0) return
+  emojiPacksLoading.value = true
+  try {
+    const res = await apiClient.get('/emoji/myEmojiPackList')
+    emojiPacks.value = res?.data ?? []
+    if (!selectedEmojiPackId.value && emojiPacks.value.length > 0) {
+      selectedEmojiPackId.value = emojiPacks.value[0].id
+    }
+  } catch (e) {
+    console.warn('Failed to load emoji packs', e)
+  } finally {
+    emojiPacksLoading.value = false
+  }
+}
+
+const loadEmojiItems = async (packId) => {
+  if (!packId) return
+  if (emojiItemsLoading.value) return
+  if (emojiItemsByPackId.value[packId]) return
+  emojiItemsLoading.value = true
+  try {
+    const res = await apiClient.post('/emoji/emojiItemList', { param: packId })
+    const items = res?.data ?? []
+    emojiItemsByPackId.value = {
+      ...emojiItemsByPackId.value,
+      [packId]: items,
+    }
+    const nextDict = { ...emojiItemDict.value }
+    items.forEach((item) => {
+      if (item?.id != null) {
+        nextDict[String(item.id)] = item
+      }
+    })
+    emojiItemDict.value = nextDict
+  } catch (e) {
+    console.warn('Failed to load emoji items', e)
+  } finally {
+    emojiItemsLoading.value = false
+  }
+}
+
+const toggleEmojiPicker = async () => {
   showEmojiPicker.value = !showEmojiPicker.value
+  if (showEmojiPicker.value) {
+    await loadEmojiPacks()
+    if (selectedEmojiPackId.value) {
+      await loadEmojiItems(selectedEmojiPackId.value)
+    }
+  }
 }
 
 const insertAtCaret = (value) => {
@@ -286,21 +345,81 @@ const insertAtCaret = (value) => {
 const handleSelectEmoji = (emoji) => {
   insertAtCaret(emoji)
   showEmojiPicker.value = false
+}
 
-  // 更新最近使用的表情
-  const index = recentEmojis.value.indexOf(emoji)
-  if (index !== -1) {
-    recentEmojis.value.splice(index, 1)
+const handleSelectEmojiPack = async (pack) => {
+  if (!pack?.id) return
+  selectedEmojiPackId.value = pack.id
+  await loadEmojiItems(pack.id)
+}
+
+const handleSelectEmojiItem = (emoji) => {
+  if (!emoji) return
+  if (emoji.type === 1 && emoji.unicodeVal) {
+    handleSelectEmoji(emoji.unicodeVal)
+    return
   }
-  recentEmojis.value.unshift(emoji)
-  if (recentEmojis.value.length > MAX_RECENT) {
-    recentEmojis.value.pop()
+  const src = emoji?.emojiItemFile?.fullFilePath
+  if (src) {
+    emit('send-emoji-file', {
+      messageFile: emoji.emojiItemFile,
+    })
+    showEmojiPicker.value = false
+    return
   }
-  localStorage.setItem(RECENT_EMOJIS_KEY, JSON.stringify(recentEmojis.value))
+  if (emoji.id != null) {
+    handleSelectEmoji(`[emoji:${emoji.id}]`)
+  }
+}
+
+const parseMessageSegments = (text) => {
+  const content = text == null ? '' : String(text)
+  const pattern = /\[emoji:(\d+)]/g
+  const segments = []
+  let lastIndex = 0
+  let match
+  while ((match = pattern.exec(content)) !== null) {
+    const start = match.index
+    const end = pattern.lastIndex
+    if (start > lastIndex) {
+      segments.push({ type: 'text', value: content.slice(lastIndex, start) })
+    }
+    const emojiId = match[1]
+    const emoji = emojiItemDict.value[String(emojiId)]
+    if (emoji?.type === 1 && emoji.unicodeVal) {
+      segments.push({ type: 'unicode', value: emoji.unicodeVal })
+    } else {
+      const src = emoji?.emojiItemFile?.fullFilePath
+      if (src) {
+        segments.push({ type: 'image', src, alt: emoji?.name ?? `emoji:${emojiId}` })
+      } else {
+        segments.push({ type: 'text', value: match[0] })
+      }
+    }
+    lastIndex = end
+  }
+  if (lastIndex < content.length) {
+    segments.push({ type: 'text', value: content.slice(lastIndex) })
+  }
+  return segments
 }
 
 const emitSend = () => {
   emit('send')
+}
+
+const triggerFilePick = () => {
+  fileInputRef.value?.click?.()
+}
+
+const handleFilePicked = (event) => {
+  const input = event?.target
+  const file = input?.files?.[0]
+  if (!file) return
+  emit('send-file', file)
+  if (input) {
+    input.value = ''
+  }
 }
 
 const handleOutsideClick = (event) => {
@@ -312,15 +431,6 @@ const handleOutsideClick = (event) => {
 
 onMounted(() => {
   document.addEventListener('click', handleOutsideClick)
-  // 加载最近使用的表情
-  const saved = localStorage.getItem(RECENT_EMOJIS_KEY)
-  if (saved) {
-    try {
-      recentEmojis.value = JSON.parse(saved)
-    } catch (e) {
-      console.warn('Failed to parse recent emojis', e)
-    }
-  }
 })
 
 onBeforeUnmount(() => {
@@ -649,6 +759,31 @@ const handleDissolveGroup = () => {
   line-height: 1.6;
 }
 
+.message-emoji-image {
+  width: 22px;
+  height: 22px;
+  vertical-align: text-bottom;
+  object-fit: contain;
+}
+
+.bubble.bubble-image {
+  padding: 1px;
+  border-radius: 11px;
+  background: #ffffff;
+}
+
+.message.self .bubble.bubble-image {
+  background: #32c374;
+}
+
+.message-file-image {
+  width: 220px;
+  max-width: 100%;
+  height: auto;
+  border-radius: 10px;
+  display: block;
+}
+
 .composer {
   margin-top: 32px;
   display: flex;
@@ -759,6 +894,44 @@ const handleDissolveGroup = () => {
   gap: 2px;
 }
 
+.emoji-pack-bar {
+  display: flex;
+  gap: 8px;
+  padding: 0 8px 12px;
+  overflow-x: auto;
+}
+
+.emoji-pack-item {
+  width: 44px;
+  height: 44px;
+  border-radius: 10px;
+  border: 1px solid #e5e5e5;
+  background: #fff;
+  padding: 0;
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.emoji-pack-item.active {
+  border-color: rgba(49, 193, 115, 0.7);
+  box-shadow: 0 0 0 3px rgba(49, 193, 115, 0.16);
+}
+
+.emoji-pack-item img {
+  width: 100%;
+  height: 100%;
+  border-radius: 10px;
+  object-fit: cover;
+}
+
+.emoji-pack-fallback {
+  font-size: 18px;
+  color: #4a4a4a;
+}
+
 .emoji-item {
   border: none;
   background: transparent;
@@ -773,6 +946,16 @@ const handleDissolveGroup = () => {
   transition: background-color 0.1s;
   padding: 0;
   line-height: 1;
+}
+
+.emoji-image {
+  width: 34px;
+  height: 34px;
+  object-fit: contain;
+}
+
+.hidden-file-input {
+  display: none;
 }
 
 .emoji-item:hover {
