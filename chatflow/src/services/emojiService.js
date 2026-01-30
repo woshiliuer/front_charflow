@@ -51,6 +51,16 @@ export const addCustomizeEmoji = async (emojiData) => {
 }
 
 /**
+ * 从消息图片添加为自定义表情
+ * @param {Object} payload
+ * @param {string} [payload.name] - 表情名称，不传则后端使用文件名
+ * @param {Object} payload.file - 文件信息 (FileCommonDTO)
+ */
+export const addEmojiFromMessageFile = async (payload) => {
+  return apiClient.post('/emoji/addEmojiFromMessageFile', payload)
+}
+
+/**
  * 收藏表情项到自定义表情列表
  * @param {number} emojiItemId - 表情项ID
  */

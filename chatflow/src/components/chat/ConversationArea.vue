@@ -139,15 +139,6 @@
               <h4 class="emoji-section-title">表情包</h4>
               <div class="emoji-pack-bar">
                 <button
-                  type="button"
-                  class="emoji-pack-item"
-                  :class="{ active: selectedEmojiPackId === CUSTOM_PACK_ID }"
-                  @click="handleSelectEmojiPack(CUSTOM_PACK_ID)"
-                  title="自定义表情"
-                >
-                  <span class="emoji-pack-fallback">❤️</span>
-                </button>
-                <button
                   v-for="pack in emojiPacks"
                   :key="pack.id"
                   type="button"
@@ -165,9 +156,9 @@
                 </button>
               </div>
               <h4 class="emoji-section-title">{{ selectedEmojiPackName }}</h4>
-              <div class="emoji-grid" :class="{ 'custom-grid': selectedEmojiPackId === CUSTOM_PACK_ID }">
+              <div class="emoji-grid" :class="{ 'custom-grid': isSelectedCustomPack }">
                 <button
-                  v-if="selectedEmojiPackId === CUSTOM_PACK_ID"
+                  v-if="isSelectedCustomPack"
                   type="button"
                   class="emoji-item add-emoji-btn"
                   @click="triggerCustomizeEmojiPick"
@@ -252,13 +243,11 @@ import ConversationSettingsDrawer from './ConversationSettingsDrawer.vue'
 import {
   fetchMyEmojiPackList,
   fetchEmojiItems,
-  fetchCustomizeEmojis,
   uploadCustomizeEmojiFile,
   addCustomizeEmoji,
+  addEmojiFromMessageFile,
   collectEmojiItem
 } from '@/services/emojiService'
-
-const CUSTOM_PACK_ID = 'customize'
 
 const props = defineProps({
   highlights: { type: Array, required: true },
@@ -303,6 +292,13 @@ const contextMenu = ref({
 
 // 处理右键点击
 const handleContextMenu = (e, message) => {
+  if (!message || Number(message.messageType) !== 2) {
+    return
+  }
+  const fileInfo = message.messageFile
+  if (!fileInfo?.fullFilePath) {
+    return
+  }
   contextMenu.value = {
     show: true,
     x: e.clientX,
@@ -322,21 +318,37 @@ const handleAddEmoji = async (message) => {
   if (!message || !message.messageFile) return
   
   try {
-    // 这里后端 collectEmojiItem 接收的是表情项 ID (param)
-    // 但消息中的图片可能没有 emojiItemId（如果是普通图片上传）
-    // 如果是表情包发送的消息，messageFile 中应该包含源 ID
-    // 假设 messageFile.sourceId 就是表情项的 ID
-    const sourceId = message.messageFile.sourceId
-    
-    if (sourceId) {
+    const fileInfo = message.messageFile
+
+    const isEmojiItemFile =
+      fileInfo?.sourceType === 'EMOJI_ITEM_STATIC' ||
+      fileInfo?.sourceType === 'EMOJI_ITEM_GIF'
+
+    if (isEmojiItemFile) {
+      const sourceId = fileInfo?.sourceId
+      if (!sourceId) {
+        ElMessage.warning('表情数据不完整，无法收藏')
+        return
+      }
       await collectEmojiItem(sourceId)
-      await loadCustomizeEmojis() // 刷新自定义表情列表
-      ElMessage.success('已添加到自定义表情')
     } else {
-      // 如果没有 sourceId，说明是普通图片，可能需要先调用上传接口转为自定义表情
-      // 但用户明确要求调用 collectEmojiItem，这里先按有 ID 处理
-      ElMessage.warning('暂不支持添加普通图片为表情')
+      await addEmojiFromMessageFile({
+        file: {
+          sourceType: fileInfo?.sourceType,
+          sourceId: fileInfo?.sourceId,
+          fileType: fileInfo?.fileType,
+          fileName: fileInfo?.fileName,
+          fileSize: fileInfo?.fileSize,
+          filePath: fileInfo?.filePath,
+          fileDesc: fileInfo?.fileDesc,
+        },
+      })
     }
+
+    if (customPackId.value != null) {
+      await loadEmojiItems(customPackId.value, true)
+    }
+    ElMessage.success('已添加到自定义表情')
   } catch (e) {
     console.error('Failed to collect emoji', e)
     ElMessage.error(e.message || '添加失败')
@@ -346,15 +358,22 @@ const handleAddEmoji = async (message) => {
 }
 
 const emojiPacks = ref([])
-const customizeEmojis = ref([])
 const selectedEmojiPackId = ref(null)
 const emojiItemsByPackId = ref({})
 const emojiItemDict = ref({})
 const emojiPacksLoading = ref(false)
 const emojiItemsLoading = ref(false)
 
+const customPackId = computed(() => {
+  const pack = emojiPacks.value.find((p) => Number(p?.type) === 2)
+  return pack?.id ?? null
+})
+
+const isSelectedCustomPack = computed(() => {
+  return customPackId.value != null && String(selectedEmojiPackId.value) === String(customPackId.value)
+})
+
 const selectedEmojiPackName = computed(() => {
-  if (selectedEmojiPackId.value === CUSTOM_PACK_ID) return '添加的单个表情'
   const pack = emojiPacks.value.find((item) => String(item.id) === String(selectedEmojiPackId.value))
   return pack?.name ?? ''
 })
@@ -362,7 +381,6 @@ const selectedEmojiPackName = computed(() => {
 const selectedEmojiItems = computed(() => {
   const key = selectedEmojiPackId.value
   if (!key) return []
-  if (key === CUSTOM_PACK_ID) return customizeEmojis.value
   return emojiItemsByPackId.value[key] ?? []
 })
 
@@ -397,32 +415,24 @@ const loadEmojiPacks = async () => {
   }
 }
 
-const loadCustomizeEmojis = async () => {
-  try {
-    const list = await fetchCustomizeEmojis()
-    customizeEmojis.value = list
-  } catch (e) {
-    console.warn('Failed to load customize emojis', e)
-  }
-}
-
-const loadEmojiItems = async (packId) => {
-  if (!packId || packId === CUSTOM_PACK_ID) return
+const loadEmojiItems = async (packId, force = false) => {
+  if (!packId) return
   if (emojiItemsLoading.value) return
-  if (emojiItemsByPackId.value[packId]) return
+  const key = String(packId)
+  if (!force && emojiItemsByPackId.value[key]) return
   emojiItemsLoading.value = true
   try {
     const items = await fetchEmojiItems(packId)
     emojiItemsByPackId.value = {
       ...emojiItemsByPackId.value,
-      [packId]: items,
+      [key]: items,
     }
     const nextDict = { ...emojiItemDict.value }
-    items.forEach((item) => {
+    for (const item of items) {
       if (item?.id != null) {
         nextDict[String(item.id)] = item
       }
-    })
+    }
     emojiItemDict.value = nextDict
   } catch (e) {
     console.warn('Failed to load emoji items', e)
@@ -435,8 +445,7 @@ const toggleEmojiPicker = async () => {
   showEmojiPicker.value = !showEmojiPicker.value
   if (showEmojiPicker.value) {
     await loadEmojiPacks()
-    await loadCustomizeEmojis()
-    if (selectedEmojiPackId.value && selectedEmojiPackId.value !== CUSTOM_PACK_ID) {
+    if (selectedEmojiPackId.value) {
       await loadEmojiItems(selectedEmojiPackId.value)
     }
   }
@@ -473,9 +482,7 @@ const handleSelectEmoji = (emoji) => {
 
 const handleSelectEmojiPack = async (packId) => {
   selectedEmojiPackId.value = packId
-  if (packId !== CUSTOM_PACK_ID) {
-    await loadEmojiItems(packId)
-  }
+  await loadEmojiItems(packId)
 }
 
 const handleSelectEmojiItem = (emoji) => {
@@ -540,9 +547,11 @@ const handleCustomizeEmojiPicked = async (event) => {
       type: file.type.includes('gif') ? 3 : 2,
       file: fileDto
     })
-    
-    // 4. 刷新列表
-    await loadCustomizeEmojis()
+
+    // 4. 刷新自定义表情包列表
+    if (customPackId.value != null) {
+      await loadEmojiItems(customPackId.value, true)
+    }
     ElMessage.success('添加成功')
   } catch (e) {
     if (e !== 'cancel') {
