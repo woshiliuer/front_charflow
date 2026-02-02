@@ -45,6 +45,7 @@
       <header class="sidebar-header">
         <h1 v-if="activeToolbar === 'conversations'">消息</h1>
         <h1 v-else-if="activeToolbar === 'contacts'">通讯录</h1>
+        <h1 v-else-if="activeToolbar === 'dynamic'">动态</h1>
         <h1 v-else>设置</h1>
         <div v-if="activeToolbar === 'conversations'" class="tools" ref="toolsRef">
           <div class="tool-create">
@@ -69,6 +70,12 @@
                   <button type="button" @click="handleAddFriend">
                     <span class="tool-menu-icon">➕</span>
                     <span>添加好友</span>
+                  </button>
+                </li>
+                <li>
+                  <button type="button" @click="handleDynamicManager">
+                    <span class="tool-menu-icon">📰</span>
+                    <span>动态管理</span>
                   </button>
                 </li>
                 <li>
@@ -179,6 +186,10 @@
       :visible="showEmojiManagerModal"
       @close="closeEmojiManagerModal"
     />
+    <DynamicManagerModal
+      :visible="showDynamicManagerModal"
+      @close="closeDynamicManagerModal"
+    />
     <CreateGroupModal
       :visible="showCreateGroupModal"
       :friends="contacts"
@@ -253,6 +264,7 @@ import MessageList from '@/components/chat/MessageList.vue'
 import AddFriendModal from '@/components/chat/AddFriendModal.vue'
 import CreateGroupModal from '@/components/chat/CreateGroupModal.vue'
 import EmojiManagerModal from '@/components/chat/EmojiManagerModal.vue'
+import DynamicManagerModal from '@/components/social/DynamicManagerModal.vue'
 import FriendRemarkModal from '@/components/chat/FriendRemarkModal.vue'
 import FriendDetailModal from '@/components/chat/FriendDetailModal.vue'
 import RejectFriendModal from '@/components/chat/RejectFriendModal.vue'
@@ -662,6 +674,8 @@ const loadFriendRequests = async () => {
 const toolbarActions = [
   { id: 'conversations', icon: '💬', label: '会话' },
   { id: 'contacts', icon: '👤', label: '通讯录' },
+  { id: 'emoji-manager', icon: '😊', label: '表情管理' },
+  { id: 'dynamic', icon: '🪐', label: '动态' },
   { id: 'settings', icon: '⚙️', label: '设置' },
 ]
 
@@ -1059,6 +1073,7 @@ const startingConversation = ref(false)
 const showCreateMenu = ref(false)
 const showProfileCard = ref(false)
 const showEmojiManagerModal = ref(false)
+const showDynamicManagerModal = ref(false)
 const toolsRef = ref(null)
 const toolbarAvatarRef = ref(null)
 const profileCardRef = ref(null)
@@ -1393,12 +1408,25 @@ const selectedThread = computed(() => {
   if (!activeConversationId.value) return []
   return messagesByConversation.value[activeConversationId.value] || []
 })
+
 const selectToolbarAction = async (id) => {
+  if (id === 'emoji-manager') {
+    showCreateMenu.value = false
+    showProfileCard.value = false
+    showAddFriendModal.value = false
+    closeConversationMenu()
+    showEmojiManagerModal.value = true
+    return
+  }
+
   activeToolbar.value = id
   showCreateMenu.value = false
   showProfileCard.value = false
   showAddFriendModal.value = false
   closeConversationMenu()
+  if (id === 'dynamic') {
+    showDynamicManagerModal.value = true
+  }
   if (id === 'conversations') {
     await ensureConversationsLoaded()
   }
@@ -2190,8 +2218,18 @@ const handleEmojiManager = () => {
   showEmojiManagerModal.value = true
 }
 
+const handleDynamicManager = () => {
+  showCreateMenu.value = false
+  showProfileCard.value = false
+  showDynamicManagerModal.value = true
+}
+
 const closeEmojiManagerModal = () => {
   showEmojiManagerModal.value = false
+}
+
+const closeDynamicManagerModal = () => {
+  showDynamicManagerModal.value = false
 }
 
 const onResizeMouseDown = (event) => {
