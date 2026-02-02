@@ -1,4 +1,4 @@
-﻿<template>
+﻿social_feed_comment<template>
   <div class="chat-breeze">
     <aside class="sidebar-toolbar">
       <div class="toolbar-avatar" ref="toolbarAvatarRef">
@@ -73,15 +73,9 @@
                   </button>
                 </li>
                 <li>
-                  <button type="button" @click="handleDynamicManager">
-                    <span class="tool-menu-icon">📰</span>
-                    <span>动态管理</span>
-                  </button>
-                </li>
-                <li>
-                  <button type="button" @click="handleEmojiManager">
-                    <span class="tool-menu-icon">😊</span>
-                    <span>表情管理</span>
+                  <button type="button" @click="handlePublishDynamicFromMenu">
+                    <span class="tool-menu-icon">✍️</span>
+                    <span>发布动态</span>
                   </button>
                 </li>
               </ul>
@@ -96,6 +90,14 @@
         :active-conversation-id="activeConversationId"
         @select="selectConversation"
         @context="handleConversationContextMenu"
+      />
+      <DynamicList
+        v-else-if="activeToolbar === 'dynamic'"
+        :items="dynamicItems"
+        :active-id="activeDynamicId"
+        :loading="dynamicLoading"
+        @select="selectDynamic"
+        @search="handleDynamicSearch"
       />
       <ContactsDirectory
         v-else-if="activeToolbar === 'contacts'"
@@ -146,6 +148,16 @@
       @send-group-message="handleSendGroupMessageFromDetail"
       @dissolve-group="handleDissolveGroupFromDetail"
     />
+    <DynamicDetailPanel
+      v-else-if="activeToolbar === 'dynamic'"
+      :dynamic="activeDynamic"
+      :current-user-id="currentUser.id"
+      :action-loading="dynamicActionLoading"
+      @like="handleLikeDynamic"
+      @unlike="handleUnlikeDynamic"
+      @comment="handleCommentDynamic"
+      @delete-comment="handleDeleteDynamicComment"
+    />
     <BrandShowcase v-else />
     <UserProfilePanel
       :visible="activeToolbar === 'settings' && showProfileModal"
@@ -185,10 +197,6 @@
     <EmojiManagerModal
       :visible="showEmojiManagerModal"
       @close="closeEmojiManagerModal"
-    />
-    <DynamicManagerModal
-      :visible="showDynamicManagerModal"
-      @close="closeDynamicManagerModal"
     />
     <CreateGroupModal
       :visible="showCreateGroupModal"
@@ -253,6 +261,13 @@
         </button>
       </li>
     </ul>
+
+    <DynamicPublishModal
+      :visible="showPublishModal"
+      :submitting="publishSubmitting"
+      @close="closePublishModal"
+      @submit="submitPublish"
+    />
   </div>
 </template>
 
@@ -264,7 +279,9 @@ import MessageList from '@/components/chat/MessageList.vue'
 import AddFriendModal from '@/components/chat/AddFriendModal.vue'
 import CreateGroupModal from '@/components/chat/CreateGroupModal.vue'
 import EmojiManagerModal from '@/components/chat/EmojiManagerModal.vue'
-import DynamicManagerModal from '@/components/social/DynamicManagerModal.vue'
+import DynamicList from '@/components/social/DynamicList.vue'
+import DynamicDetailPanel from '@/components/social/DynamicDetailPanel.vue'
+import DynamicPublishModal from '@/components/social/DynamicPublishModal.vue'
 import FriendRemarkModal from '@/components/chat/FriendRemarkModal.vue'
 import FriendDetailModal from '@/components/chat/FriendDetailModal.vue'
 import RejectFriendModal from '@/components/chat/RejectFriendModal.vue'
@@ -679,6 +696,218 @@ const toolbarActions = [
   { id: 'settings', icon: '⚙️', label: '设置' },
 ]
 
+const dynamicLoading = ref(false)
+const dynamicItems = ref([])
+const dynamicTotal = ref(0)
+const dynamicQuery = ref({ page: 1, size: 20, content: '' })
+const activeDynamicId = ref(null)
+const activeDynamic = ref(null)
+const dynamicActionLoading = ref(false)
+
+const showPublishModal = ref(false)
+const publishSubmitting = ref(false)
+const publishContent = ref('')
+const publishFiles = ref([])
+
+const openPublishModal = () => {
+  showPublishModal.value = true
+}
+
+const closePublishModal = (force = false) => {
+  if (!force && publishSubmitting.value) return
+  showPublishModal.value = false
+  publishContent.value = ''
+  publishFiles.value = []
+}
+
+const submitPublish = async ({ content, files, attachedFiles } = {}) => {
+  if (publishSubmitting.value) return
+  const safeContent = (content || '').trim()
+  const safeFiles = Array.isArray(files) ? files.filter(Boolean) : []
+  const safeAttachedFiles = Array.isArray(attachedFiles) ? attachedFiles.filter(Boolean) : []
+  if (!safeContent && safeFiles.length === 0 && safeAttachedFiles.length === 0) return
+
+  publishSubmitting.value = true
+  try {
+    const { uploadSocialFeedFiles, publishSocialFeed } = await import('@/services/socialFeedService')
+
+    let uploaded = []
+    if (safeFiles.length) {
+      uploaded = await uploadSocialFeedFiles(safeFiles)
+    }
+
+    const uploadedPayload = Array.isArray(uploaded)
+      ? uploaded
+          .filter(Boolean)
+          .map((f) => ({
+            sourceType: f.sourceType,
+            sourceId: f.sourceId,
+            fileType: f.fileType,
+            fileName: f.fileName,
+            fileSize: f.fileSize,
+            filePath: f.filePath,
+            fileDesc: f.fileDesc,
+          }))
+      : []
+
+    const attachedPayload = safeAttachedFiles
+      .filter((f) => f?.filePath)
+      .map((f) => ({
+        sourceType: f.sourceType,
+        sourceId: f.sourceId,
+        fileType: f.fileType,
+        fileName: f.fileName,
+        fileSize: f.fileSize,
+        filePath: f.filePath,
+        fileDesc: f.fileDesc,
+      }))
+
+    const mergedByPath = new Map()
+    ;[...attachedPayload, ...uploadedPayload].forEach((f) => {
+      const key = String(f?.filePath || '')
+      if (!key) return
+      if (!mergedByPath.has(key)) {
+        mergedByPath.set(key, f)
+      }
+    })
+    const payloadFiles = Array.from(mergedByPath.values())
+
+    const { data } = await publishSocialFeed({ content: safeContent, files: payloadFiles })
+    const newFeedId = data
+
+    closePublishModal(true)
+    activeToolbar.value = 'dynamic'
+    await loadDynamicList({ page: 1 })
+    if (newFeedId) {
+      await selectDynamic(newFeedId)
+    }
+    ElMessage.success('发布成功')
+  } catch (error) {
+    console.error('发布动态失败', error)
+    ElMessage.error(error?.message || '发布失败')
+  } finally {
+    publishSubmitting.value = false
+  }
+}
+
+const loadDynamicList = async (options = {}) => {
+  if (dynamicLoading.value) return
+  dynamicLoading.value = true
+  try {
+    dynamicQuery.value = {
+      ...dynamicQuery.value,
+      ...options,
+    }
+    const { fetchSocialFeedList } = await import('@/services/socialFeedService')
+    const data = await fetchSocialFeedList(dynamicQuery.value)
+    dynamicItems.value = Array.isArray(data?.feedList) ? data.feedList : []
+    dynamicTotal.value = Number(data?.total ?? 0)
+
+    if (!activeDynamicId.value && dynamicItems.value.length) {
+      await selectDynamic(dynamicItems.value[0].id)
+    }
+  } catch (error) {
+    console.error('加载动态列表失败', error)
+    dynamicItems.value = []
+    dynamicTotal.value = 0
+  } finally {
+    dynamicLoading.value = false
+  }
+}
+
+const loadDynamicDetail = async (id) => {
+  if (!id) {
+    activeDynamic.value = null
+    return
+  }
+  try {
+    const { fetchSocialFeedDetail } = await import('@/services/socialFeedService')
+    const detail = await fetchSocialFeedDetail(id)
+    activeDynamic.value = detail
+  } catch (error) {
+    console.error('加载动态详情失败', error)
+    activeDynamic.value = null
+  }
+}
+
+const selectDynamic = async (id) => {
+  activeDynamicId.value = id
+  await loadDynamicDetail(id)
+}
+
+const handleDynamicSearch = async (keyword) => {
+  await loadDynamicList({ page: 1, content: keyword || '' })
+}
+
+const refreshActiveDynamic = async () => {
+  if (!activeDynamicId.value) return
+  await loadDynamicDetail(activeDynamicId.value)
+  const idx = dynamicItems.value.findIndex((it) => String(it?.id) === String(activeDynamicId.value))
+  if (idx >= 0 && activeDynamic.value) {
+    dynamicItems.value.splice(idx, 1, {
+      ...dynamicItems.value[idx],
+      likeCount: activeDynamic.value.likeCount,
+      commentCount: activeDynamic.value.commentCount,
+    })
+  }
+}
+
+const handleLikeDynamic = async (feedId) => {
+  if (dynamicActionLoading.value) return
+  dynamicActionLoading.value = true
+  try {
+    const { likeSocialFeed } = await import('@/services/socialFeedService')
+    await likeSocialFeed(feedId)
+    await refreshActiveDynamic()
+  } catch (error) {
+    console.error('点赞失败', error)
+  } finally {
+    dynamicActionLoading.value = false
+  }
+}
+
+const handleUnlikeDynamic = async (feedId) => {
+  if (dynamicActionLoading.value) return
+  dynamicActionLoading.value = true
+  try {
+    const { unlikeSocialFeed } = await import('@/services/socialFeedService')
+    await unlikeSocialFeed(feedId)
+    await refreshActiveDynamic()
+  } catch (error) {
+    console.error('取消点赞失败', error)
+  } finally {
+    dynamicActionLoading.value = false
+  }
+}
+
+const handleCommentDynamic = async ({ feedId, content }) => {
+  if (dynamicActionLoading.value) return
+  dynamicActionLoading.value = true
+  try {
+    const { commentSocialFeed } = await import('@/services/socialFeedService')
+    await commentSocialFeed({ feedId, content })
+    await refreshActiveDynamic()
+  } catch (error) {
+    console.error('评论失败', error)
+  } finally {
+    dynamicActionLoading.value = false
+  }
+}
+
+const handleDeleteDynamicComment = async (commentId) => {
+  if (dynamicActionLoading.value) return
+  dynamicActionLoading.value = true
+  try {
+    const { deleteSocialFeedComment } = await import('@/services/socialFeedService')
+    await deleteSocialFeedComment(commentId)
+    await refreshActiveDynamic()
+  } catch (error) {
+    console.error('删除评论失败', error)
+  } finally {
+    dynamicActionLoading.value = false
+  }
+}
+
 const settingsItems = [
   {
     id: 'profile',
@@ -1073,7 +1302,6 @@ const startingConversation = ref(false)
 const showCreateMenu = ref(false)
 const showProfileCard = ref(false)
 const showEmojiManagerModal = ref(false)
-const showDynamicManagerModal = ref(false)
 const toolsRef = ref(null)
 const toolbarAvatarRef = ref(null)
 const profileCardRef = ref(null)
@@ -1424,9 +1652,6 @@ const selectToolbarAction = async (id) => {
   showProfileCard.value = false
   showAddFriendModal.value = false
   closeConversationMenu()
-  if (id === 'dynamic') {
-    showDynamicManagerModal.value = true
-  }
   if (id === 'conversations') {
     await ensureConversationsLoaded()
   }
@@ -1444,6 +1669,9 @@ const selectToolbarAction = async (id) => {
       activeFriendId.value = filteredContacts.value[0].id
     }
     loadFriendRequests()
+  }
+  if (id === 'dynamic') {
+    await loadDynamicList({ page: 1 })
   }
 }
 
@@ -2212,25 +2440,18 @@ const handleAddFriend = () => {
   showAddFriendModal.value = true
 }
 
-const handleEmojiManager = () => {
+const handlePublishDynamicFromMenu = async () => {
   showCreateMenu.value = false
   showProfileCard.value = false
-  showEmojiManagerModal.value = true
-}
-
-const handleDynamicManager = () => {
-  showCreateMenu.value = false
-  showProfileCard.value = false
-  showDynamicManagerModal.value = true
+  showFriendModal.value = false
+  openPublishModal()
 }
 
 const closeEmojiManagerModal = () => {
   showEmojiManagerModal.value = false
 }
 
-const closeDynamicManagerModal = () => {
-  showDynamicManagerModal.value = false
-}
+ 
 
 const onResizeMouseDown = (event) => {
   isResizing.value = true
@@ -2621,6 +2842,60 @@ const handleAvatarChange = async (file) => {
   gap: 12px;
   position: relative; 
   min-height: 40px; 
+}
+
+.sidebar-header-dynamic {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.sidebar-header-dynamic h1 {
+  position: static;
+  transform: none;
+  left: auto;
+  margin: 0;
+  font-size: 24px;
+  font-weight: 750;
+  letter-spacing: 0.02em;
+}
+
+.dynamic-publish-btn {
+  height: 36px;
+  padding: 0 14px;
+  border-radius: 999px;
+  border: 1px solid rgba(52, 192, 115, 0.35);
+  background: linear-gradient(145deg, rgba(52, 192, 115, 0.18), rgba(255, 255, 255, 0.92));
+  color: #1a7a4c;
+  font-weight: 700;
+  font-size: 13px;
+  cursor: pointer;
+  transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease;
+  box-shadow: 0 10px 18px rgba(54, 102, 74, 0.12);
+}
+
+.dynamic-publish-btn:hover {
+  transform: translateY(-1px);
+  border-color: rgba(52, 192, 115, 0.55);
+  box-shadow: 0 16px 24px rgba(54, 102, 74, 0.18);
+}
+
+.dynamic-publish-btn:active {
+  transform: translateY(0);
+}
+
+.dynamic-publish-btn:focus-visible {
+  outline: 3px solid rgba(52, 192, 115, 0.35);
+  outline-offset: 3px;
+}
+
+.dynamic-publish-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
 }
 
 
