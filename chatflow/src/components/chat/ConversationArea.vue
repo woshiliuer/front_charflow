@@ -398,15 +398,21 @@ const handleInput = () => {
   emit('update:draft', localDraft.value)
 }
 
-const loadEmojiPacks = async () => {
+const loadEmojiPacks = async (force = false) => {
   if (emojiPacksLoading.value) return
-  if (emojiPacks.value.length > 0) return
+  if (!force && emojiPacks.value.length > 0) return
   emojiPacksLoading.value = true
   try {
     const list = await fetchMyEmojiPackList()
     emojiPacks.value = list
-    if (!selectedEmojiPackId.value && list.length > 0) {
-      selectedEmojiPackId.value = list[0].id
+
+    const existsSelected =
+      selectedEmojiPackId.value != null &&
+      list.some((p) => String(p?.id) === String(selectedEmojiPackId.value))
+
+    if (!existsSelected) {
+      const defaultPack = list.find((p) => Number(p?.type) === 1)
+      selectedEmojiPackId.value = defaultPack?.id ?? (list[0]?.id ?? null)
     }
   } catch (e) {
     console.warn('Failed to load emoji packs', e)
@@ -444,7 +450,7 @@ const loadEmojiItems = async (packId, force = false) => {
 const toggleEmojiPicker = async () => {
   showEmojiPicker.value = !showEmojiPicker.value
   if (showEmojiPicker.value) {
-    await loadEmojiPacks()
+    await loadEmojiPacks(true)
     if (selectedEmojiPackId.value) {
       await loadEmojiItems(selectedEmojiPackId.value)
     }
