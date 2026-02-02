@@ -60,6 +60,27 @@ export const addEmojiFromMessageFile = async (payload) => {
   return apiClient.post('/emoji/addEmojiFromMessageFile', payload)
 }
 
+export const fetchEmojiPackList = async ({ page = 1, size = 20, name = '' } = {}) => {
+  const { data } = await apiClient.post('/emoji/emojiPackList', {
+    page,
+    size,
+    name,
+  })
+  return data
+}
+
+export const bindEmojiPack = async (packId) => {
+  return apiClient.post('/emoji/bindEmojiPack', {
+    param: packId,
+  })
+}
+
+export const unbindEmojiPack = async (packId) => {
+  return apiClient.post('/emoji/unbindEmojiPack', {
+    param: packId,
+  })
+}
+
 /**
  * 收藏表情项到自定义表情列表
  * @param {number} emojiItemId - 表情项ID

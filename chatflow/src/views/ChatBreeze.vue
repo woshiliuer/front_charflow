@@ -71,6 +71,12 @@
                     <span>添加好友</span>
                   </button>
                 </li>
+                <li>
+                  <button type="button" @click="handleEmojiManager">
+                    <span class="tool-menu-icon">😊</span>
+                    <span>表情管理</span>
+                  </button>
+                </li>
               </ul>
             </transition>
           </div>
@@ -169,6 +175,10 @@
       @close="closeAddFriendModal"
       @friend-added="handleFriendAdded"
     />
+    <EmojiManagerModal
+      :visible="showEmojiManagerModal"
+      @close="closeEmojiManagerModal"
+    />
     <CreateGroupModal
       :visible="showCreateGroupModal"
       :friends="contacts"
@@ -242,6 +252,7 @@ import ContactsDirectory from '@/components/chat/ContactsDirectory.vue'
 import MessageList from '@/components/chat/MessageList.vue'
 import AddFriendModal from '@/components/chat/AddFriendModal.vue'
 import CreateGroupModal from '@/components/chat/CreateGroupModal.vue'
+import EmojiManagerModal from '@/components/chat/EmojiManagerModal.vue'
 import FriendRemarkModal from '@/components/chat/FriendRemarkModal.vue'
 import FriendDetailModal from '@/components/chat/FriendDetailModal.vue'
 import RejectFriendModal from '@/components/chat/RejectFriendModal.vue'
@@ -1047,6 +1058,7 @@ const showFriendModal = ref(false)
 const startingConversation = ref(false)
 const showCreateMenu = ref(false)
 const showProfileCard = ref(false)
+const showEmojiManagerModal = ref(false)
 const toolsRef = ref(null)
 const toolbarAvatarRef = ref(null)
 const profileCardRef = ref(null)
@@ -2170,6 +2182,16 @@ const handleAddFriend = () => {
   showProfileCard.value = false
   showFriendModal.value = false
   showAddFriendModal.value = true
+}
+
+const handleEmojiManager = () => {
+  showCreateMenu.value = false
+  showProfileCard.value = false
+  showEmojiManagerModal.value = true
+}
+
+const closeEmojiManagerModal = () => {
+  showEmojiManagerModal.value = false
 }
 
 const onResizeMouseDown = (event) => {
