@@ -81,6 +81,12 @@ export const unbindEmojiPack = async (packId) => {
   })
 }
 
+export const deleteCustomizeEmojiItem = async (emojiItemId) => {
+  return apiClient.post('/emoji/deleteCustomizeEmojiItem', {
+    param: emojiItemId,
+  })
+}
+
 /**
  * 收藏表情项到自定义表情列表
  * @param {number} emojiItemId - 表情项ID
