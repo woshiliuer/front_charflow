@@ -99,6 +99,13 @@
         @select="selectDynamic"
         @search="handleDynamicSearch"
       />
+      <FavoriteList
+        v-else-if="activeToolbar === 'favorites'"
+        :items="favoriteItems"
+        :active-id="activeFavoriteId"
+        :loading="favoritesLoading"
+        @select="selectFavorite"
+      />
       <ContactsDirectory
         v-else-if="activeToolbar === 'contacts'"
         :friend-requests="friendRequests"
@@ -157,6 +164,11 @@
       @unlike="handleUnlikeDynamic"
       @comment="handleCommentDynamic"
       @delete-comment="handleDeleteDynamicComment"
+    />
+    <FavoriteDetailPanel 
+      v-else-if="activeToolbar === 'favorites'" 
+      :item="activeFavorite" 
+      @delete="handleDeleteFavorite"
     />
     <BrandShowcase v-else />
     <UserProfilePanel
@@ -282,6 +294,8 @@ import EmojiManagerModal from '@/components/chat/EmojiManagerModal.vue'
 import DynamicList from '@/components/social/DynamicList.vue'
 import DynamicDetailPanel from '@/components/social/DynamicDetailPanel.vue'
 import DynamicPublishModal from '@/components/social/DynamicPublishModal.vue'
+import FavoriteList from '@/components/favorite/FavoriteList.vue'
+import FavoriteDetailPanel from '@/components/favorite/FavoriteDetailPanel.vue'
 import FriendRemarkModal from '@/components/chat/FriendRemarkModal.vue'
 import FriendDetailModal from '@/components/chat/FriendDetailModal.vue'
 import RejectFriendModal from '@/components/chat/RejectFriendModal.vue'
@@ -314,7 +328,7 @@ import UserProfilePanel from '@/components/settings/UserProfilePanel.vue'
 import ResetPasswordPanel from '@/components/settings/ResetPasswordPanel.vue'
 import BrandShowcase from '@/components/common/BrandShowcase.vue'
 import { useAuthStore } from '@/stores/auth'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import 'element-plus/es/components/message/style/css'
 import { useChatWebSocket } from '@/composables/useChatWebSocket'
 
@@ -490,12 +504,12 @@ const handleSendEmojiFile = async (payload) => {
       messageFile,
     })
 
-    const messageIndex = messagesByConversation.value[conversationId].findIndex((msg) => msg.id === tempId)
     if (messageIndex !== -1) {
       messagesByConversation.value[conversationId][messageIndex].status = 1
       messagesByConversation.value[conversationId][messageIndex].messageFile = response?.messageFile || messageFile
       if (response?.id) {
         messagesByConversation.value[conversationId][messageIndex].id = response.id
+        messagesByConversation.value[conversationId][messageIndex].dbId = response.id
       }
       if (response?.sequence) {
         messagesByConversation.value[conversationId][messageIndex].sequence = response.sequence
@@ -693,6 +707,7 @@ const toolbarActions = [
   { id: 'contacts', icon: '👤', label: '通讯录' },
   { id: 'emoji-manager', icon: '😊', label: '表情管理' },
   { id: 'dynamic', icon: '🪐', label: '动态' },
+  { id: 'favorites', icon: '⭐', label: '收藏夹' },
   { id: 'settings', icon: '⚙️', label: '设置' },
 ]
 
@@ -703,6 +718,83 @@ const dynamicQuery = ref({ page: 1, size: 20, content: '' })
 const activeDynamicId = ref(null)
 const activeDynamic = ref(null)
 const dynamicActionLoading = ref(false)
+
+const favoritesLoading = ref(false)
+const favoriteItems = ref([])
+const activeFavoriteId = ref(null)
+const activeFavorite = ref(null)
+
+const loadFavoriteList = async () => {
+  if (favoritesLoading.value) return
+  favoritesLoading.value = true
+  try {
+    const { fetchFavoriteList } = await import('@/services/favoriteService')
+    const { data } = await fetchFavoriteList()
+    favoriteItems.value = Array.isArray(data) ? data : []
+    
+    if (!activeFavoriteId.value && favoriteItems.value.length) {
+      await selectFavorite(favoriteItems.value[0].id)
+    }
+  } catch (error) {
+    console.error('加载收藏列表失败', error)
+    favoriteItems.value = []
+  } finally {
+    favoritesLoading.value = false
+  }
+}
+
+const loadFavoriteDetail = async (id) => {
+  if (!id) {
+    activeFavorite.value = null
+    return
+  }
+  try {
+    const { fetchFavoriteDetail } = await import('@/services/favoriteService')
+    const { data } = await fetchFavoriteDetail(id)
+    activeFavorite.value = data
+  } catch (error) {
+    console.error('加载收藏详情失败', error)
+    activeFavorite.value = null
+  }
+}
+
+const selectFavorite = async (id) => {
+  activeFavoriteId.value = id
+  await loadFavoriteDetail(id)
+}
+
+const handleDeleteFavorite = async (id) => {
+  if (!id) return
+  try {
+    await ElMessageBox.confirm('确定要取消这条收藏吗？', '提示', {
+      confirmButtonText: '确定',
+      cancelButtonText: '取消',
+      type: 'warning'
+    })
+    
+    const { deleteFavorite } = await import('@/services/favoriteService')
+    await deleteFavorite(id)
+    ElMessage.success('已取消收藏')
+    
+    // 刷新列表
+    await loadFavoriteList()
+    
+    // 如果删除的是当前选中的，清空选中状态或选择第一项
+    if (String(activeFavoriteId.value) === String(id)) {
+      if (favoriteItems.value.length) {
+        await selectFavorite(favoriteItems.value[0].id)
+      } else {
+        activeFavoriteId.value = null
+        activeFavorite.value = null
+      }
+    }
+  } catch (error) {
+    if (error !== 'cancel') {
+      console.error('删除收藏失败', error)
+      ElMessage.error(error?.message || '取消收藏失败')
+    }
+  }
+}
 
 const showPublishModal = ref(false)
 const publishSubmitting = ref(false)
@@ -1061,15 +1153,16 @@ const addMessageToThread = (conversationId, message, isFromMe) => {
   }
   
   const newMessage = {
-    id: message.id || message.sequence || Date.now(),
+    id: message.id || message.messageId || message.sequence || `msg_${Date.now()}`,
+    dbId: message.id || message.messageId, 
     role,
     author,
-    text: message.text || message.content || '',
+    text: messageText,
     messageType: message.messageType ?? 1,
     messageFile: message.messageFile,
-    avatarFullUrl: message.avatarFullUrl || '',
-    time: formatMessageTime(message.sendTime || Date.now()),
-    sendTime: message.sendTime || Date.now(),
+    avatarFullUrl: message.avatarFullUrl || avatar,
+    time: formatMessageTime(messageTime),
+    sendTime: messageTime,
     sequence: message.sequence,
     status: message.status !== undefined ? message.status : 1,
   }
@@ -1187,13 +1280,15 @@ const handleSendMessage = async () => {
       (msg) => msg.id === tempId
     )
     if (messageIndex !== -1) {
-      messagesByConversation.value[conversationId][messageIndex].status = 1
+      const msgObj = messagesByConversation.value[conversationId][messageIndex]
+      msgObj.status = 1
       // 更新服务器返回的真实ID和sequence
       if (response.id) {
-        messagesByConversation.value[conversationId][messageIndex].id = response.id
+        msgObj.id = response.id
+        msgObj.dbId = response.id
       }
       if (response.sequence) {
-        messagesByConversation.value[conversationId][messageIndex].sequence = response.sequence
+        msgObj.sequence = response.sequence
       }
     }
     
@@ -1262,12 +1357,12 @@ const handleSendFileMessage = async (file) => {
       messageFile,
     })
 
-    const messageIndex = messagesByConversation.value[conversationId].findIndex((msg) => msg.id === tempId)
     if (messageIndex !== -1) {
       messagesByConversation.value[conversationId][messageIndex].status = 1
       messagesByConversation.value[conversationId][messageIndex].messageFile = response?.messageFile || messageFile
       if (response?.id) {
         messagesByConversation.value[conversationId][messageIndex].id = response.id
+        messagesByConversation.value[conversationId][messageIndex].dbId = response.id
       }
       if (response?.sequence) {
         messagesByConversation.value[conversationId][messageIndex].sequence = response.sequence
@@ -1552,12 +1647,15 @@ const loadMessages = async (conversationId) => {
     
     const convertedMessages = list.map((msg, index) => {
         const direction = Number(msg.direction)
-        // direction: 1=USER_TO_FRIEND(我发出的), 2=FRIEND_TO_USER(收到的)
         const role = direction === 1 ? 'self' : 'contact'
         const author = role === 'self' ? '我' : contactName
         
+        // 关键：统一获取数据库真实ID
+        const realDbId = msg.id || msg.messageId
+        
         return {
-          id: msg.sequence || index + 1,
+          id: realDbId || msg.sequence || `msg_${index}`,
+          dbId: realDbId, 
           role,
           author,
           text: msg.content || '',
@@ -1646,32 +1744,26 @@ const selectToolbarAction = async (id) => {
     showEmojiManagerModal.value = true
     return
   }
-
+  
   activeToolbar.value = id
   showCreateMenu.value = false
   showProfileCard.value = false
   showAddFriendModal.value = false
   closeConversationMenu()
+  
   if (id === 'conversations') {
     await ensureConversationsLoaded()
-  }
-  if (id !== 'contacts') {
-    showFriendModal.value = false
-  }
-  if (id !== 'settings') {
+  } else if (id === 'dynamic') {
+    await loadDynamicList({ page: 1 })
+  } else if (id === 'favorites') {
+    await loadFavoriteList()
+  } else if (id === 'contacts') {
     showProfileModal.value = false
-  } else {
-    showProfileModal.value = false
-  }
-  if (id === 'contacts') {
     await ensureFriendsLoaded()
     if (!activeFriendId.value && filteredContacts.value.length) {
       activeFriendId.value = filteredContacts.value[0].id
     }
     loadFriendRequests()
-  }
-  if (id === 'dynamic') {
-    await loadDynamicList({ page: 1 })
   }
 }
 

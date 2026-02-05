@@ -225,6 +225,12 @@
         @click.stop
       >
         <div 
+          class="context-menu-item" 
+          @click="handleCollectMessage(contextMenu.message)"
+        >
+          <span class="menu-icon">⭐</span> 收藏
+        </div>
+        <div 
           v-if="contextMenu.message?.messageType === 2 || contextMenu.message?.messageType === '2'" 
           class="context-menu-item" 
           @click="handleAddEmoji(contextMenu.message)"
@@ -248,6 +254,7 @@ import {
   addEmojiFromMessageFile,
   collectEmojiItem
 } from '@/services/emojiService'
+import { collectFromMessage } from '@/services/favoriteService'
 
 const props = defineProps({
   highlights: { type: Array, required: true },
@@ -292,13 +299,14 @@ const contextMenu = ref({
 
 // 处理右键点击
 const handleContextMenu = (e, message) => {
-  if (!message || Number(message.messageType) !== 2) {
+  if (!message) return
+  
+  // 支持文本(1)和图片/表情(2)
+  const mType = Number(message.messageType)
+  if (mType !== 1 && mType !== 2) {
     return
   }
-  const fileInfo = message.messageFile
-  if (!fileInfo?.fullFilePath) {
-    return
-  }
+
   contextMenu.value = {
     show: true,
     x: e.clientX,
@@ -311,6 +319,37 @@ const handleContextMenu = (e, message) => {
     document.removeEventListener('click', closeMenu)
   }
   document.addEventListener('click', closeMenu)
+}
+
+// 收藏消息
+const handleCollectMessage = async (message) => {
+  if (!message || !props.selectedConversation?.id) return
+  
+  const mId = message.dbId || message.id
+  console.log('[Favorite] Attempting to collect message:', {
+    conversationId: props.selectedConversation.id,
+    messageId: mId,
+    originalMessage: message
+  })
+
+  if (!mId || String(mId).startsWith('temp_') || String(mId).startsWith('msg_')) {
+    ElMessage.warning('消息 ID 无效或正在发送中')
+    return
+  }
+
+  try {
+    const res = await collectFromMessage({
+      conversationId: props.selectedConversation.id,
+      messageId: mId
+    })
+    console.log('[Favorite] Collect success:', res)
+    ElMessage.success('已收藏')
+  } catch (e) {
+    console.error('[Favorite] Failed to collect message:', e)
+    ElMessage.error(e.message || '收藏失败')
+  } finally {
+    contextMenu.value.show = false
+  }
 }
 
 // 添加到自定义表情
@@ -1229,27 +1268,32 @@ const handleDissolveGroup = () => {
 .context-menu {
   position: fixed;
   z-index: 3000;
-  background: #ffffff;
-  border: 1px solid #e5e5e5;
-  border-radius: 8px;
-  padding: 4px 0;
-  min-width: 120px;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  background: rgba(255, 255, 255, 0.95);
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(230, 239, 229, 0.8);
+  border-radius: 14px;
+  min-width: 140px;
+  padding: 6px;
+  box-shadow: 0 12px 32px rgba(54, 102, 74, 0.15);
+  overflow: hidden;
 }
 
 .context-menu-item {
-  padding: 8px 16px;
-  font-size: 14px;
-  color: #333;
+  padding: 10px 14px;
+  font-size: 13px;
+  color: #274531;
   cursor: pointer;
   display: flex;
   align-items: center;
-  gap: 8px;
-  transition: background 0.2s;
+  gap: 10px;
+  border-radius: 10px;
+  transition: all 0.2s ease;
+  font-weight: 500;
 }
 
 .context-menu-item:hover {
-  background: #f5f5f5;
+  background: rgba(52, 192, 115, 0.1);
+  color: #2bb673;
 }
 
 .menu-icon {
