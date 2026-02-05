@@ -191,6 +191,16 @@
       @reset="handleResetPassword"
     />
 
+    <MessageNotification
+      :visible="notificationState.visible"
+      :sender-name="notificationState.senderName"
+      :message-text="notificationState.messageText"
+      :avatar="notificationState.avatar"
+      :conversation-id="notificationState.conversationId"
+      @close="closeNotification"
+      @click="handleNotificationClick"
+    />
+
 
     <FriendDetailModal
       :visible="showFriendModal"
@@ -304,6 +314,7 @@ import GroupInviteModal from '@/components/chat/GroupInviteModal.vue'
 import GroupAnnouncementModal from '@/components/chat/GroupAnnouncementModal.vue'
 import GroupDetailModal from '@/components/chat/GroupDetailModal.vue'
 import ProfilePopover from '@/components/profile/ProfilePopover.vue'
+import MessageNotification from '@/components/common/MessageNotification.vue'
 import { fetchNormalizedFriends, fetchFriendRequests, agreeFriendRequest, rejectFriendRequest } from '@/services/friendService'
 import {
   dissolveGroup,
@@ -506,14 +517,15 @@ const handleSendEmojiFile = async (payload) => {
     })
 
     if (messageIndex !== -1) {
-      messagesByConversation.value[conversationId][messageIndex].status = 1
-      messagesByConversation.value[conversationId][messageIndex].messageFile = response?.messageFile || messageFile
+      const msgObj = messagesByConversation.value[conversationId][messageIndex]
+      msgObj.status = 1
+      msgObj.messageFile = response?.messageFile || messageFile
       if (response?.id) {
-        messagesByConversation.value[conversationId][messageIndex].id = response.id
-        messagesByConversation.value[conversationId][messageIndex].dbId = response.id
+        msgObj.id = response.id
+        msgObj.dbId = response.id
       }
       if (response?.sequence) {
-        messagesByConversation.value[conversationId][messageIndex].sequence = response.sequence
+        msgObj.sequence = response.sequence
       }
     }
 
@@ -1118,6 +1130,8 @@ const handleReceivedMessage = (message) => {
     // 否则更新会话列表（只有别人发来的消息才增加未读）
     if (!isFromMe) {
       updateConversationWithNewMessage(conversationId, message)
+      // 弹出提醒
+      showNotification(message)
     }
   }
 }
@@ -1132,29 +1146,22 @@ const addMessageToThread = (conversationId, message, isFromMe) => {
     String(conv.id) === String(conversationId)
   )
   const contactName = conversation?.displayName || conversation?.nameEn || '对方'
+  const avatar = conversation?.avatar || DEFAULT_AVATAR_URL
   
   const role = isFromMe ? 'self' : 'contact'
   const author = isFromMe ? '我' : contactName
   
-  // 检查是否已存在（去重）
-  // 1. 优先通过 sequence 匹配
-  // 2. 其次通过 id 匹配
-  // 3. 如果是自己发送的消息，通过文本内容和时间匹配（去重乐观更新的消息）
   const messageText = message.text || message.content || ''
   const messageTime = message.sendTime || Date.now()
   
   const existingMessage = messagesByConversation.value[conversationId].find((msg) => {
-    // 通过 sequence 匹配
     if (message.sequence && msg.sequence) {
       return msg.sequence === message.sequence
     }
-    // 通过 id 匹配
     if (message.id && msg.id) {
       return String(msg.id) === String(message.id)
     }
-    // 如果是自己发送的消息，通过文本和时间匹配（用于去重乐观更新的消息）
     if (isFromMe && msg.role === 'self' && msg.text === messageText) {
-      // 检查时间差在 5 秒内，认为是同一条消息
       const timeDiff = Math.abs((msg.sendTime || 0) - messageTime)
       if (timeDiff < 5000) {
         return true
@@ -1164,13 +1171,12 @@ const addMessageToThread = (conversationId, message, isFromMe) => {
   })
   
   if (existingMessage) {
-    // 如果找到已存在的消息，更新它而不是添加新的
     if (message.status !== undefined) {
       existingMessage.status = message.status
     }
-    // 更新其他字段
     if (message.id && !existingMessage.id) {
       existingMessage.id = message.id
+      existingMessage.dbId = message.id
     }
     if (message.avatarFullUrl) {
       existingMessage.avatarFullUrl = message.avatarFullUrl
@@ -1202,7 +1208,6 @@ const addMessageToThread = (conversationId, message, isFromMe) => {
   
   messagesByConversation.value[conversationId].push(newMessage)
   
-  // 排序
   messagesByConversation.value[conversationId].sort((a, b) => {
     if (a.sequence && b.sequence) {
       return a.sequence - b.sequence
@@ -1391,14 +1396,15 @@ const handleSendFileMessage = async (file) => {
     })
 
     if (messageIndex !== -1) {
-      messagesByConversation.value[conversationId][messageIndex].status = 1
-      messagesByConversation.value[conversationId][messageIndex].messageFile = response?.messageFile || messageFile
+      const msgObj = messagesByConversation.value[conversationId][messageIndex]
+      msgObj.status = 1
+      msgObj.messageFile = response?.messageFile || messageFile
       if (response?.id) {
-        messagesByConversation.value[conversationId][messageIndex].id = response.id
-        messagesByConversation.value[conversationId][messageIndex].dbId = response.id
+        msgObj.id = response.id
+        msgObj.dbId = response.id
       }
       if (response?.sequence) {
-        messagesByConversation.value[conversationId][messageIndex].sequence = response.sequence
+        msgObj.sequence = response.sequence
       }
     }
 
@@ -1445,6 +1451,68 @@ const resettingPassword = ref(false)
 const resetCodeCountdown = ref(0)
 let resetCodeTimer = null
 const RESET_CODE_COUNTDOWN = 60
+
+const userInfoLoaded = ref(false)
+
+// 消息弹窗提醒状态
+const notificationState = reactive({
+  visible: false,
+  senderName: '',
+  messageText: '',
+  avatar: '',
+  conversationId: null
+})
+let notificationTimer = null
+
+const showNotification = (message) => {
+  if (!userInfoLoaded.value) {
+    return
+  }
+
+  // 1=关闭，2=开启
+  if (Number(currentUser.notificationEnabled) === 1) {
+    console.log('[ChatBreeze] notification disabled, skip popup. notificationEnabled=', currentUser.notificationEnabled)
+    return
+  }
+
+  const conversationId =
+    message.conversationId ||
+    message.sessionId ||
+    message.to ||
+    message.from ||
+    message.senderId
+
+  if (!conversationId) {
+    return
+  }
+
+  // 如果是当前正在聊天的会话，不弹窗
+  if (activeConversationId.value && String(activeConversationId.value) === String(conversationId)) {
+    return
+  }
+
+  const conversation = conversations.value.find(c => String(c.id) === String(conversationId))
+  notificationState.senderName = conversation?.displayName || message.senderNickname || '新消息'
+  notificationState.messageText = message.text || message.content || '[收到一条消息]'
+  notificationState.avatar = conversation?.avatar || message.avatarFullUrl || ''
+  notificationState.conversationId = conversationId
+  notificationState.visible = true
+
+  // 5秒后自动关闭
+  if (notificationTimer) clearTimeout(notificationTimer)
+  notificationTimer = setTimeout(() => {
+    notificationState.visible = false
+  }, 5000)
+}
+
+const closeNotification = () => {
+  notificationState.visible = false
+}
+
+const handleNotificationClick = (conversationId) => {
+  notificationState.visible = false
+  selectConversation(conversationId)
+}
 
 watch(
   () => contacts.value.length,
@@ -2635,6 +2703,7 @@ let currentUser = reactive({
   nickname: '',
   avatarUrl: '',
   avatarFullUrl: '',
+  notificationEnabled: 2,
   gender: '',
   genderDesc: '',
   signature: '',
@@ -2665,19 +2734,25 @@ const normalizeGender = (value) => {
 }
 
 const getUserInfo = async () => {
-  const data = await fetchUserInfo()
-  if (data){
-    currentUser.id = data.id ?? null
-    currentUser.email = data.email ?? ''
-    currentUser.nickname = data.nickname ?? ''
-    const avatarUrl = data.avatarUrl ?? data.avatarFullUrl ?? ''
-    currentUser.avatarUrl = avatarUrl
-    currentUser.avatarFullUrl = data.avatarFullUrl ?? avatarUrl
-    currentUser.signature = data.signature ?? ''
-    currentUser.genderDesc = data.genderDesc ?? ''
-    currentUser.gender = normalizeGender(data.gender ?? data.genderDesc)
+  try {
+    const data = await fetchUserInfo()
+    console.log('[ChatBreeze] getUserInfo response:', data)
+    if (data){
+      currentUser.id = data.id ?? null
+      currentUser.email = data.email ?? ''
+      currentUser.nickname = data.nickname ?? ''
+      const avatarUrl = data.avatarUrl ?? data.avatarFullUrl ?? ''
+      currentUser.avatarUrl = avatarUrl
+      currentUser.avatarFullUrl = data.avatarFullUrl ?? avatarUrl
+      currentUser.notificationEnabled = data.notificationEnabled ?? 2
+      currentUser.signature = data.signature ?? ''
+      currentUser.genderDesc = data.genderDesc ?? ''
+      currentUser.gender = normalizeGender(data.gender ?? data.genderDesc)
+    }
+  } finally {
+    userInfoLoaded.value = true
+    console.log('[ChatBreeze] userInfoLoaded=', userInfoLoaded.value, 'notificationEnabled=', currentUser.notificationEnabled)
   }
-  console.log(currentUser)
 }
 
 getUserInfo()
