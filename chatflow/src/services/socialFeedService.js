@@ -41,6 +41,10 @@ export const deleteSocialFeedComment = async (commentId) => {
   return apiClient.post('/socialFeedComment/delete', { param: commentId })
 }
 
+export const deleteSocialFeed = async (feedId) => {
+  return apiClient.post('/socialFeed/delete', { param: feedId })
+}
+
 export const uploadSocialFeedFile = async (file) => {
   const formData = new FormData()
   formData.append('file', file)

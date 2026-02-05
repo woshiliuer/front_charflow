@@ -164,6 +164,7 @@
       @unlike="handleUnlikeDynamic"
       @comment="handleCommentDynamic"
       @delete-comment="handleDeleteDynamicComment"
+      @delete="handleDeleteSocialFeed"
     />
     <FavoriteDetailPanel 
       v-else-if="activeToolbar === 'favorites'" 
@@ -995,6 +996,38 @@ const handleDeleteDynamicComment = async (commentId) => {
     await refreshActiveDynamic()
   } catch (error) {
     console.error('删除评论失败', error)
+  } finally {
+    dynamicActionLoading.value = false
+  }
+}
+
+const handleDeleteSocialFeed = async (feedId) => {
+  if (!feedId) return
+  try {
+    await ElMessageBox.confirm('确定要删除这条动态吗？相关的评论和点赞也将被永久删除。', '提示', {
+      confirmButtonText: '确定',
+      cancelButtonText: '取消',
+      type: 'warning'
+    })
+    
+    dynamicActionLoading.value = true
+    const { deleteSocialFeed } = await import('@/services/socialFeedService')
+    await deleteSocialFeed(feedId)
+    ElMessage.success('动态已删除')
+    
+    // 刷新列表
+    await loadDynamicList({ page: 1 })
+    
+    // 如果删除的是当前选中的，清空选中状态
+    if (String(activeDynamicId.value) === String(feedId)) {
+      activeDynamicId.value = null
+      activeDynamic.value = null
+    }
+  } catch (error) {
+    if (error !== 'cancel') {
+      console.error('删除动态失败', error)
+      ElMessage.error(error?.message || '删除失败')
+    }
   } finally {
     dynamicActionLoading.value = false
   }

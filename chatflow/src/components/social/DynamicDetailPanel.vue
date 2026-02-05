@@ -11,6 +11,13 @@
             <p class="time">{{ dynamic.timeHint || '' }}</p>
           </div>
         </div>
+        <div class="header-actions" v-if="String(dynamic.userId) === String(currentUserId)">
+          <button class="btn-delete-dynamic" @click="emit('delete', dynamic.id)" title="删除动态">
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+            </svg>
+          </button>
+        </div>
       </div>
 
       <div class="content-scroll-area">
@@ -113,7 +120,7 @@ const props = defineProps({
   },
 })
 
-const emit = defineEmits(['like', 'unlike', 'comment', 'delete-comment'])
+const emit = defineEmits(['like', 'unlike', 'comment', 'delete-comment', 'delete'])
 
 const commentDraft = ref('')
 
@@ -238,6 +245,25 @@ const formatTimeHint = (timestamp) => {
   margin: 2px 0 0;
   font-size: 12px;
   color: #8e9c94;
+}
+
+.btn-delete-dynamic {
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  border: none;
+  background: transparent;
+  color: #8e9c94;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s;
+}
+
+.btn-delete-dynamic:hover {
+  background: #fff1f0;
+  color: #ff4d4f;
 }
 
 /* Content Area */
