@@ -13,7 +13,14 @@
       </div>
       <div class="info">
         <div class="name-block">
-          <strong>{{ item.nameEn }}</strong>
+          <div class="name-row">
+            <strong>{{ item.nameEn }}</strong>
+            <span v-if="item.isGroupConversation" class="group-badge" title="群聊">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4zM20 12c1.66 0 3-1.34 3-3s-1.34-3-3-3-3 1.34-3 3 1.34 3 3 3zm1 2c-.15 0-.31.01-.46.02C21.91 14.88 23 16.29 23 18v2h4v-2c0-2.66-5.33-4-6-4zM4 12c1.66 0 3-1.34 3-3S5.66 6 4 6s-3 1.34-3 3 1.34 3 3 3zm-1 2c-.67 0-5.33 1.34-6 4v2h4v-2c0-1.71 1.09-3.12 2.46-3.98-.15-.01-.31-.02-.46-.02z"/>
+              </svg>
+            </span>
+          </div>
           <span v-if="item.nameCn" class="name-cn">{{ item.nameCn }}</span>
         </div>
         <p v-if="item.snippet">{{ item.snippet }}</p>
@@ -113,9 +120,28 @@ const handleContextMenu = (item, event) => {
   flex-direction: column;
   gap: 4px;
 }
+.name-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
 .name-block strong {
   font-size: 15px;
   line-height: 1.2;
+}
+.group-tag {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  line-height: 1;
+  color: #ffffff;
+  background: linear-gradient(135deg, #32c374, #1da368);
+  padding: 2px 4px;
+  border-radius: 4px;
+  font-weight: 600;
+  flex-shrink: 0;
+  transform: translateY(-1px);
 }
 .name-cn {
   font-size: 12px;
