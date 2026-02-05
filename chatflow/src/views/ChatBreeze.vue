@@ -1130,14 +1130,23 @@ const handleReceivedMessage = (message) => {
   const senderId = message.from || message.senderId
   const isFromMe = String(senderId) === String(currentUser.id)
   
-  // 检查会话是否已经在列表中
-  const conversationExists = conversations.value.some(conv => 
-    String(conv.id) === String(conversationId) || Number(conv.id) === Number(conversationId)
-  )
-
-  // 如果会话不在列表中（可能是之前被隐藏了，现在新消息来了需要恢复），重新加载会话列表
-  if (!conversationExists) {
-    console.log('[ChatBreeze] 收到新会话消息或隐藏会话消息，重新加载列表:', conversationId)
+  console.log('[ChatBreeze] 收到新消息，处理逻辑:', conversationId)
+  
+  // 如果是当前查看的会话且是别人发来的消息，先标记已读
+  if (!isFromMe && activeConversationId.value && (
+    activeConversationId.value === Number(conversationId) || 
+    String(activeConversationId.value) === String(conversationId)
+  )) {
+    import('@/services/messageService').then(({ markAsRead }) => {
+      markAsRead(conversationId).then(() => {
+        // 标记已读后，再刷新会话列表
+        loadConversations({ force: true }).then(() => {
+          addMessageToThread(conversationId, message, isFromMe)
+        })
+      })
+    })
+  } else {
+    // 其他情况直接刷新会话列表
     loadConversations({ force: true }).then(() => {
       // 重新加载后，如果是当前选中的会话，确保消息被添加到线程
       if (activeConversationId.value && (
@@ -1147,27 +1156,11 @@ const handleReceivedMessage = (message) => {
         addMessageToThread(conversationId, message, isFromMe)
       }
     })
-    
-    // 如果不是自己发的，弹出提醒
-    if (!isFromMe) {
-      showNotification(message)
-    }
-    return
   }
-
-  // 如果是当前查看的会话，直接添加消息
-  if (activeConversationId.value && (
-    activeConversationId.value === Number(conversationId) || 
-    String(activeConversationId.value) === String(conversationId)
-  )) {
-    addMessageToThread(conversationId, message, isFromMe)
-  } else {
-    // 否则更新会话列表（只有别人发来的消息才增加未读）
-    if (!isFromMe) {
-      updateConversationWithNewMessage(conversationId, message)
-      // 弹出提醒
-      showNotification(message)
-    }
+  
+  // 如果不是自己发的，弹出提醒
+  if (!isFromMe) {
+    showNotification(message)
   }
 }
 
