@@ -16,3 +16,8 @@ export const updateUserInfo = async (payload) => {
 export const uploadAvatar = async (formData) => {
   return apiClient.postForm('/user/uploadAvatar', formData)
 }
+
+export const updateNotificationEnabled = async (notificationEnabled) => {
+  const { data } = await apiClient.post('/user/updateNotificationEnabled', { param: notificationEnabled })
+  return data ?? null
+}

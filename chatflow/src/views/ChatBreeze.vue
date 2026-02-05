@@ -191,6 +191,14 @@
       @reset="handleResetPassword"
     />
 
+    <NotificationSettingsPanel
+      :visible="activeToolbar === 'settings' && showNotificationSettingsModal"
+      :current-user="currentUser"
+      :saving="updatingNotificationEnabled"
+      @close="closeNotificationSettingsModal"
+      @toggle="handleToggleNotificationEnabled"
+    />
+
     <MessageNotification
       :visible="notificationState.visible"
       :sender-name="notificationState.senderName"
@@ -313,6 +321,7 @@ import RejectFriendModal from '@/components/chat/RejectFriendModal.vue'
 import GroupInviteModal from '@/components/chat/GroupInviteModal.vue'
 import GroupAnnouncementModal from '@/components/chat/GroupAnnouncementModal.vue'
 import GroupDetailModal from '@/components/chat/GroupDetailModal.vue'
+import NotificationSettingsPanel from '@/components/settings/NotificationSettingsPanel.vue'
 import ProfilePopover from '@/components/profile/ProfilePopover.vue'
 import MessageNotification from '@/components/common/MessageNotification.vue'
 import { fetchNormalizedFriends, fetchFriendRequests, agreeFriendRequest, rejectFriendRequest } from '@/services/friendService'
@@ -1074,6 +1083,7 @@ const handleSelect = (id) => {
   activeItem.value = id
   showProfileModal.value = id === 'profile'
   showResetPasswordModal.value = id === 'account'
+  showNotificationSettingsModal.value = id === 'notifications'
   if (id !== 'account') {
     clearResetPasswordState()
   }
@@ -1444,6 +1454,7 @@ const showCreateGroupModal = ref(false)
 const isCreatingGroup = ref(false)
 const showProfileModal = ref(false)
 const showResetPasswordModal = ref(false)
+const showNotificationSettingsModal = ref(false)
 const updatingProfile = ref(false)
 const avatarUploading = ref(false)
 const sendingResetCode = ref(false)
@@ -1451,6 +1462,8 @@ const resettingPassword = ref(false)
 const resetCodeCountdown = ref(0)
 let resetCodeTimer = null
 const RESET_CODE_COUNTDOWN = 60
+
+const updatingNotificationEnabled = ref(false)
 
 const userInfoLoaded = ref(false)
 
@@ -1471,7 +1484,6 @@ const showNotification = (message) => {
 
   // 1=关闭，2=开启
   if (Number(currentUser.notificationEnabled) === 1) {
-    console.log('[ChatBreeze] notification disabled, skip popup. notificationEnabled=', currentUser.notificationEnabled)
     return
   }
 
@@ -2736,7 +2748,6 @@ const normalizeGender = (value) => {
 const getUserInfo = async () => {
   try {
     const data = await fetchUserInfo()
-    console.log('[ChatBreeze] getUserInfo response:', data)
     if (data){
       currentUser.id = data.id ?? null
       currentUser.email = data.email ?? ''
@@ -2751,7 +2762,23 @@ const getUserInfo = async () => {
     }
   } finally {
     userInfoLoaded.value = true
-    console.log('[ChatBreeze] userInfoLoaded=', userInfoLoaded.value, 'notificationEnabled=', currentUser.notificationEnabled)
+  }
+}
+
+const handleToggleNotificationEnabled = async (notificationEnabled) => {
+  if (updatingNotificationEnabled.value) return
+  updatingNotificationEnabled.value = true
+  try {
+    const { updateNotificationEnabled } = await import('@/services/userService')
+    await updateNotificationEnabled(notificationEnabled)
+    await getUserInfo()
+    ElMessage.success('设置已保存')
+  } catch (error) {
+    console.error('更新通知设置失败', error)
+    ElMessage.error(error?.message || '保存失败')
+    await getUserInfo()
+  } finally {
+    updatingNotificationEnabled.value = false
   }
 }
 
@@ -2765,6 +2792,10 @@ const closeProfileModal = () => {
 const closeResetPasswordModal = () => {
   showResetPasswordModal.value = false
   clearResetPasswordState()
+}
+
+const closeNotificationSettingsModal = () => {
+  showNotificationSettingsModal.value = false
 }
 
 const handleProfileUpdate = async (payload) => {
