@@ -1,0 +1,18 @@
+services:
+  chatflow-nginx:
+    container_name: chatflow-nginx
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    ports:
+      - "${CHATFLOW_PORT:-8082}:8082"
+    environment:
+      TZ: ${TZ:-Asia/Shanghai}
+    networks:
+      - chatflow-net
+
+networks:
+  chatflow-net:
+    external: true
+    name: chatflow-net

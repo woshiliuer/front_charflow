@@ -38,6 +38,22 @@
           </div>
           <dl v-else>
             <div class="friend-modal-row">
+              <dt>备注</dt>
+              <dd>
+                <template v-if="!isEditingRemark">
+                  <span>{{ resolvedFriend.remark || '暂无备注' }}</span>
+                  <button class="edit-btn" @click="startEditRemark">修改</button>
+                </template>
+                <template v-else>
+                  <div class="edit-remark-input">
+                    <input v-model="editRemarkValue" @keyup.enter="handleSaveRemark" @keyup.esc="isEditingRemark = false" />
+                    <button class="save-btn" :disabled="isUpdatingRemark" @click="handleSaveRemark">保存</button>
+                    <button class="cancel-btn" @click="isEditingRemark = false">取消</button>
+                  </div>
+                </template>
+              </dd>
+            </div>
+            <div class="friend-modal-row">
               <dt>邮箱</dt>
               <dd>{{ resolvedFriend.email || '暂无邮箱' }}</dd>
             </div>
@@ -76,7 +92,7 @@
 
 <script setup>
 import { computed, ref, watch } from 'vue'
-import { fetchFriendDetail, deleteFriend } from '@/services/friendService'
+import { fetchFriendDetail, deleteFriend, updateFriendRemark } from '@/services/friendService'
 import { ElMessageBox, ElMessage } from 'element-plus'
 import 'element-plus/es/components/message-box/style/css'
 import 'element-plus/es/components/message/style/css'
@@ -95,6 +111,9 @@ const detail = ref(null)
 const isLoading = ref(false)
 const detailError = ref('')
 const isDeleting = ref(false)
+const isUpdatingRemark = ref(false)
+const isEditingRemark = ref(false)
+const editRemarkValue = ref('')
 
 const resolvedFriend = computed(() => {
   if (detail.value) {
@@ -140,7 +159,29 @@ const avatarInitial = computed(() => {
 })
 
 const emitClose = () => {
+  isEditingRemark.value = false
   emit('close')
+}
+
+const startEditRemark = () => {
+  editRemarkValue.value = resolvedFriend.value.remark
+  isEditingRemark.value = true
+}
+
+const handleSaveRemark = async () => {
+  if (isUpdatingRemark.value) return
+  const friendId = friend.value.userId ?? friend.value.id
+  isUpdatingRemark.value = true
+  try {
+    await updateFriendRemark(friendId, editRemarkValue.value.trim())
+    detail.value.remark = editRemarkValue.value.trim()
+    isEditingRemark.value = false
+    ElMessage.success('备注更新成功')
+  } catch (error) {
+    ElMessage.error(error?.message || '更新失败')
+  } finally {
+    isUpdatingRemark.value = false
+  }
 }
 
 const emitSend = () => {

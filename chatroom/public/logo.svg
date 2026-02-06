@@ -1,0 +1,60 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200">
+  <defs>
+    <linearGradient id="nexus-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#4263eb;stop-opacity:1" />
+      <stop offset="50%" style="stop-color:#3b5bdb;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#1c7ed6;stop-opacity:1" />
+    </linearGradient>
+    <linearGradient id="glass-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#ffffff;stop-opacity:0.9" />
+      <stop offset="100%" style="stop-color:#ffffff;stop-opacity:0.2" />
+    </linearGradient>
+    <filter id="premium-glow" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur stdDeviation="6" result="blur" />
+      <feComposite in="SourceGraphic" in2="blur" operator="over" />
+    </filter>
+    <filter id="inner-depth">
+      <feOffset dx="0" dy="4" />
+      <feGaussianBlur stdDeviation="4" result="offset-blur" />
+      <feComposite operator="out" in="SourceGraphic" in2="offset-blur" result="inverse" />
+      <feFlood flood-color="black" flood-opacity="0.2" result="color" />
+      <feComposite operator="in" in="color" in2="inverse" result="shadow" />
+      <feComposite operator="over" in="shadow" in2="SourceGraphic" />
+    </filter>
+  </defs>
+
+  <!-- The Nexus Ring (The Global Scale) -->
+  <circle cx="100" cy="100" r="85" fill="none" stroke="url(#nexus-grad)" stroke-width="1" opacity="0.2" />
+  <circle cx="100" cy="100" r="75" fill="none" stroke="url(#nexus-grad)" stroke-width="0.5" opacity="0.1" />
+  
+  <!-- Outer Fluid Arc -->
+  <path d="M160,60 C180,100 160,150 100,170 C40,190 20,140 30,80 C40,20 100,10 150,40" 
+        fill="none" 
+        stroke="url(#nexus-grad)" 
+        stroke-width="12" 
+        stroke-linecap="round" 
+        filter="url(#premium-glow)" />
+
+  <!-- The Core Dialogue Bubble (The Nexus Center) -->
+  <path d="M60,50 H140 C151,50 160,59 160,70 V110 C160,121 151,130 140,130 H120 L90,150 V130 H60 C49,130 40,121 40,110 V70 C40,59 49,50 60,50 Z" 
+        fill="url(#nexus-grad)" 
+        filter="url(#inner-depth)" />
+
+  <!-- Glass Overlay Bubble (The Human Touch) -->
+  <path d="M45,35 H125 C136,35 145,44 145,55 V95 C145,106 136,115 125,115 H115 V130 L90,115 H45 C34,115 25,106 25,95 V55 C25,44 34,35 45,35 Z" 
+        fill="url(#glass-grad)" 
+        stroke="#ffffff" 
+        stroke-width="0.5" 
+        backdrop-filter="blur(4px)" />
+
+  <!-- The Pulse Dot (Real-time Vitality) -->
+  <circle cx="165" cy="45" r="8" fill="#4263eb">
+    <animate attributeName="r" values="6;9;6" dur="2s" repeatCount="indefinite" />
+    <animate attributeName="opacity" values="0.4;1;0.4" dur="2s" repeatCount="indefinite" />
+  </circle>
+
+  <!-- Subtle High-end Details -->
+  <rect x="65" cy="65" width="12" height="4" rx="2" fill="#ffffff" opacity="0.8" />
+  <rect x="85" cy="65" width="12" height="4" rx="2" fill="#ffffff" opacity="0.8" />
+  <rect x="105" cy="65" width="12" height="4" rx="2" fill="#ffffff" opacity="0.8" />
+</svg>

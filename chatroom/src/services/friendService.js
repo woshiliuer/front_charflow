@@ -69,9 +69,6 @@ export const fetchNormalizedFriends = async () => {
   return list.map((item, index) => normalizeFriend(item, index))
 }
 
-/**
- * 好友申请列表
- */
 export const fetchFriendRequests = async () => {
   const { data } = await apiClient.get('/friend/friendRequestList')
   return data || {}
