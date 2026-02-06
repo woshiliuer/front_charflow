@@ -150,7 +150,7 @@
             <div class="msg-bubble">
               <div v-if="msg.messageType === 2 && msg.messageFile" class="msg-image"><img :src="msg.messageFile.fullFilePath || msg.messageFile.fileUrl || msg.messageFile.filePath" /></div>
               <div v-else class="msg-text">{{ msg.text }}</div>
-              <div class="msg-meta"><span>{{ msg.time }}</span><span v-if="msg.role === 'self' && msg.status === 0" class="sending">发送中</span><span v-if="msg.role === 'self' && msg.status === -1" class="failed">失败</span></div>
+              <div class="msg-meta"><span v-if="msg.role === 'self' && msg.status === 0" class="sending">发送中</span><span v-if="msg.role === 'self' && msg.status === -1" class="failed">失败</span></div>
             </div>
             <div v-if="msg.role === 'self'" class="msg-avatar"><img v-if="currentUser.avatarFullUrl" :src="currentUser.avatarFullUrl" /><span v-else class="avatar-letter sm">{{ userInitial }}</span></div>
           </div>
@@ -184,18 +184,18 @@
                 <div class="drawer-row"><span>消息免打扰</span><button class="toggle-btn" :class="{ on: selectedConversation.isMuted }" @click="handleToggleMute(!selectedConversation.isMuted)">{{ selectedConversation.isMuted ? '已开启' : '未开启' }}</button></div>
                 <template v-if="selectedConversation.isGroupConversation">
                   <div class="drawer-section">群聊信息</div>
-                  <div class="drawer-row"><span>群名称</span><input v-model="editGroupName" class="drawer-input" @blur="handleUpdateGroupName" /></div>
-                  <div class="drawer-row"><span>群简介</span><input v-model="editGroupIntro" class="drawer-input" @blur="handleUpdateGroupIntro" /></div>
-                  <div class="drawer-row"><span>群公告</span><button class="btn-link" @click="showAnnouncementModal = true">编辑</button></div>
+                  <div class="drawer-row"><span>群名称</span><input v-model="editGroupName" class="drawer-input" :disabled="!isGroupOwner" @blur="handleUpdateGroupName" /></div>
+                  <div class="drawer-row"><span>群简介</span><input v-model="editGroupIntro" class="drawer-input" :disabled="!isGroupOwner" @blur="handleUpdateGroupIntro" /></div>
+                  <div class="drawer-row"><span>群公告</span><button class="btn-link" :disabled="!isGroupOwner" @click="showAnnouncementModal = true">编辑</button></div>
                   <div class="drawer-section">成员 ({{ selectedConversation.members?.length || 0 }})</div>
-                  <div class="drawer-members">
-                    <div v-for="m in selectedConversation.members" :key="m.id || m.userId" class="member-item">
-                      <img :src="m.avatarFullUrl || m.avatar || DEFAULT_AVATAR" /><span>{{ m.name || m.nickname || '成员' }}</span>
-                      <button v-if="m.id !== currentUser.id && m.userId !== currentUser.id" class="btn-link danger" @click="handleRemoveMember(m)">移除</button>
+                  <div class="drawer-members-grid">
+                    <div v-for="m in sortedMembers" :key="m.id || m.userId" class="member-avatar-wrapper" :title="m.name || m.nickname || m.displayName || '成员'">
+                      <img :src="m.avatarFullUrl || m.avatar || DEFAULT_AVATAR" class="member-avatar" />
                     </div>
+                    <button class="member-avatar add-btn" title="邀请成员" @click="showGroupInvite = true">+</button>
+                    <button v-if="isGroupOwner" class="member-avatar remove-btn" title="移除成员" @click="showRemoveMemberModal = true">−</button>
                   </div>
-                  <button v-if="canInvite" class="btn-block accent" @click="showGroupInvite = true">邀请成员</button>
-                  <button class="btn-block danger" @click="handleDissolveGroup">解散群聊</button>
+                  <button v-if="isGroupOwner" class="btn-block danger" @click="handleDissolveGroup">解散群聊</button>
                 </template>
                 <button class="btn-block" @click="handleDeleteConversation">删除会话</button>
                 <button v-if="selectedConversation.isGroupConversation" class="btn-block" @click="handleLeaveGroup">退出群聊</button>
@@ -257,7 +257,10 @@
             </div>
           </div>
           <div class="feed-detail-content" style="white-space: pre-wrap; word-break: break-all;">
-            {{ activeFavoriteDetail.content || activeFavoriteDetail.text || '[无内容]' }}
+            {{ activeFavoriteDetail.content || activeFavoriteDetail.text || (activeFavoriteDetail.type === 2 ? '' : '[无内容]') }}
+          </div>
+          <div v-if="activeFavoriteDetail.type === 2 || activeFavoriteDetail.messageFile" class="feed-detail-images">
+            <img :src="activeFavoriteDetail.messageFile?.fullFilePath || activeFavoriteDetail.messageFile?.filePath || activeFavoriteDetail.fileUrl" style="max-width: 100%; border-radius: 8px;" />
           </div>
           <!-- If it's a message collection, could potentially show more context here -->
           <div style="margin-top: 20px; padding-top: 12px; border-top: 1px solid var(--c-border-light); font-size: 12px; color: var(--c-text-4);">
@@ -353,6 +356,26 @@
         </div>
       </div>
     </teleport>
+    <teleport to="body">
+      <div v-if="showRemoveMemberModal" class="modal-overlay" @click.self="showRemoveMemberModal = false">
+        <div class="modal-card">
+          <h3>移除成员</h3>
+          <div class="member-select">
+            <label v-for="m in sortedMembers.filter(m => m.id !== currentUser.id && m.userId !== currentUser.id && Number(m.role || m.groupRole) !== 3)" :key="m.id || m.userId" class="member-opt">
+              <input type="checkbox" :value="m.userId || m.id" @change="toggleMemberToRemove(m.userId || m.id)" :checked="selectedMembersToRemove.includes(m.userId || m.id)" />
+              <img :src="m.avatarFullUrl || m.avatar || DEFAULT_AVATAR" style="width:24px;height:24px;border-radius:4px;margin-right:8px" />
+              <span>{{ m.name || m.nickname || '成员' }}</span>
+            </label>
+            <div v-if="!sortedMembers.filter(m => m.id !== currentUser.id && m.userId !== currentUser.id && Number(m.role || m.groupRole) !== 3).length" class="empty-hint">暂无可移除的成员</div>
+          </div>
+          <div class="modal-actions">
+            <button class="btn-ghost" @click="showRemoveMemberModal = false">取消</button>
+            <button class="btn-primary danger" :disabled="!selectedMembersToRemove.length" @click="handleRemoveMemberConfirm">移除{{ selectedMembersToRemove.length ? ` (${selectedMembersToRemove.length})` : '' }}</button>
+          </div>
+        </div>
+      </div>
+    </teleport>
+
     <teleport to="body">
       <div v-if="showGroupInvite" class="modal-overlay" @click.self="showGroupInvite = false">
         <div class="modal-card"><h3>邀请成员</h3>
@@ -628,6 +651,9 @@ const showResetPwModal = ref(false)
 const showNotifModal = ref(false)
 const showPublishFeed = ref(false)
 const showGroupDetail = ref(false)
+const showRemoveMemberModal = ref(false)
+const removeMemberSearch = ref('')
+const selectedMembersToRemove = ref([])
 const showFriendDetail = ref(false)
 const addFriendEmail = ref('')
 const addFriendMsg = ref('')
@@ -754,7 +780,8 @@ const normalizeConv = (item, i) => {
   const statusCode = Number(item.status) || 1
   const convType = Number(item.conversationType) || 1; const isGroup = convType === 2
   const friendId = item.friendId ?? item.targetUserId ?? item.userId ?? (!isGroup ? relationId : null)
-  return { id, relationId, friendId, targetUserId: item.targetUserId ?? friendId, displayName, nameEn: displayName, snippet: item.content ?? '', content: item.content ?? '', unread: Number.isFinite(unread) && unread > 0 ? unread : 0, statusCode, avatar, sendTime, conversationType: convType, isGroupConversation: isGroup, groupName: item.groupName || displayName, announcement: item.announcement || '', introduction: item.introduction || '', members: Array.isArray(item.members) ? item.members : [], isFavorite: statusCode === 3, isMuted: false, clock: formatClock(sendTime) }
+  const role = item.role !== undefined ? Number(item.role) : (item.groupRole !== undefined ? Number(item.groupRole) : null)
+  return { id, relationId, friendId, targetUserId: item.targetUserId ?? friendId, displayName, nameEn: displayName, snippet: item.content ?? '', content: item.content ?? '', unread: Number.isFinite(unread) && unread > 0 ? unread : 0, statusCode, avatar, sendTime, conversationType: convType, isGroupConversation: isGroup, groupName: item.groupName || displayName, announcement: item.announcement || '', introduction: item.introduction || '', members: Array.isArray(item.members) ? item.members : [], isFavorite: statusCode === 3, isMuted: false, clock: formatClock(sendTime), role }
 }
 const setConversations = (list) => { const n = list.map((item, i) => normalizeConv(item, i)).filter(Boolean).sort((a, b) => { const f = Number(b.isFavorite) - Number(a.isFavorite); return f !== 0 ? f : (b.sendTime ?? 0) - (a.sendTime ?? 0) }); conversations.value = n; if (!activeConversationId.value && n.length) activeConversationId.value = n[0].id }
 const sortConvs = () => { conversations.value.sort((a, b) => { const f = Number(b.isFavorite) - Number(a.isFavorite); return f !== 0 ? f : (b.sendTime ?? 0) - (a.sendTime ?? 0) }) }
@@ -995,11 +1022,82 @@ const handleCreateGroupConfirm = async () => { if (!groupName.value.trim()) { al
 const groupInviteCandidates = computed(() => { const conv = selectedConversation.value; if (!conv?.isGroupConversation) return []; const memberIds = new Set((conv.members || []).map((m) => m?.id ?? m?.userId).filter(Boolean)); return contacts.value.filter((f) => !memberIds.has(f.id)).map((f) => ({ id: f.id, displayName: f.nameEn || f.nickname || `好友 #${f.id}` })) })
 const canInvite = computed(() => groupInviteCandidates.value.length > 0)
 const handleInviteConfirm = async () => { if (!inviteSelectedIds.value.length) { showGroupInvite.value = false; return }; const conv = selectedConversation.value; if (!conv) return; const gid = conv.relationId ?? conv.id; try { await inviteMembers(gid, inviteSelectedIds.value); alert('已发送邀请'); showGroupInvite.value = false; inviteSelectedIds.value = []; await loadConversations({ force: true }) } catch (e) { alert(e?.message || '邀请失败') } }
-const handleUpdateGroupName = async () => { const conv = selectedConversation.value; if (!conv?.isGroupConversation) return; const name = editGroupName.value.trim(); if (!name || name === (conv.groupName || conv.displayName || '').trim()) return; conv.groupName = name; conv.displayName = name; conv.nameEn = name; sortConvs(); try { await editGroup({ groupId: conv.relationId ?? conv.id, groupName: name, introduction: conv.introduction || '', announcement: conv.announcement || '' }) } catch (e) { alert(e?.message || '更新失败') } }
-const handleUpdateGroupIntro = async () => { const conv = selectedConversation.value; if (!conv?.isGroupConversation) return; const intro = editGroupIntro.value.trim(); if (intro === (conv.introduction || '').trim()) return; conv.introduction = intro; try { await editGroup({ groupId: conv.relationId ?? conv.id, groupName: conv.groupName || conv.displayName || '', introduction: intro, announcement: conv.announcement || '' }) } catch (e) { alert(e?.message || '更新失败') } }
-const handleSaveAnnouncement = async () => { const conv = selectedConversation.value; if (!conv?.isGroupConversation) return; conv.announcement = announcementDraft.value.trim(); try { await editGroup({ groupId: conv.relationId ?? conv.id, groupName: conv.groupName || conv.displayName || '', introduction: conv.introduction || '', announcement: conv.announcement }); showAnnouncementModal.value = false } catch (e) { alert(e?.message || '更新失败') } }
-const handleRemoveMember = async (member) => { const conv = selectedConversation.value; if (!conv?.isGroupConversation) return; const mid = member?.userId ?? member?.id; if (!mid) return; try { await removeGroupMembers(conv.relationId ?? conv.id, [mid]); const detail = await fetchGroupDetail(conv.relationId ?? conv.id); if (detail?.members) conv.members = detail.members; alert('已移除') } catch (e) { alert(e?.message || '移除失败') } }
-const handleDissolveGroup = async () => { const conv = selectedConversation.value; if (!conv?.isGroupConversation) return; if (!confirm('确定解散群聊？')) return; try { await dissolveGroup(conv.relationId ?? conv.id); alert('群聊已解散'); showSettingsDrawer.value = false; await loadConversations({ force: true }); if (activeConversationId.value === conv.id) activeConversationId.value = conversations.value[0]?.id ?? null } catch (e) { alert(e?.message || '解散失败') } }
+const sortedMembers = computed(() => {
+  const conv = selectedConversation.value
+  if (!conv?.isGroupConversation || !conv.members) return []
+  return [...conv.members].sort((a, b) => {
+    const roleA = Number(a.role || a.groupRole || 0)
+    const roleB = Number(b.role || b.groupRole || 0)
+    // 假设 role 为 3 是群主 (基于 chatflow 逻辑)，群主排在最前面
+    if (roleA === 3) return -1
+    if (roleB === 3) return 1
+    return 0
+  })
+})
+
+const isGroupOwner = computed(() => {
+  const conv = selectedConversation.value
+  if (!conv?.isGroupConversation) return false
+  // 按照 chatflow 逻辑，role 为 3 是群主
+  return Number(conv.role) === 3
+})
+
+watch(() => showSettingsDrawer.value, async (val) => {
+  if (val && selectedConversation.value?.isGroupConversation) {
+    const conv = selectedConversation.value
+    try {
+      const detail = await fetchGroupDetail(conv.relationId ?? conv.id)
+      if (detail) {
+        conv.members = detail.members
+        conv.announcement = detail.announcement
+        conv.introduction = detail.introduction
+        conv.role = detail.role
+        editGroupName.value = detail.groupName || conv.displayName || ''
+        editGroupIntro.value = detail.introduction || ''
+        announcementDraft.value = detail.announcement || ''
+      }
+    } catch (e) { console.error('刷新群详情失败', e) }
+  }
+})
+
+const handleUpdateGroupName = async () => {
+  const conv = selectedConversation.value; if (!conv?.isGroupConversation) return;
+  if (!isGroupOwner.value) { alert('只有群主可以修改群名称'); return }
+  const name = editGroupName.value.trim(); if (!name || name === (conv.groupName || conv.displayName || '').trim()) return; conv.groupName = name; conv.displayName = name; conv.nameEn = name; sortConvs(); try { await editGroup({ groupId: conv.relationId ?? conv.id, groupName: name, introduction: conv.introduction || '', announcement: conv.announcement || '' }) } catch (e) { alert(e?.message || '更新失败') } }
+const handleUpdateGroupIntro = async () => {
+  const conv = selectedConversation.value; if (!conv?.isGroupConversation) return;
+  if (!isGroupOwner.value) { alert('只有群主可以修改群简介'); return }
+  const intro = editGroupIntro.value.trim(); if (intro === (conv.introduction || '').trim()) return; conv.introduction = intro; try { await editGroup({ groupId: conv.relationId ?? conv.id, groupName: conv.groupName || conv.displayName || '', introduction: intro, announcement: conv.announcement || '' }) } catch (e) { alert(e?.message || '更新失败') } }
+const handleSaveAnnouncement = async () => {
+  const conv = selectedConversation.value; if (!conv?.isGroupConversation) return;
+  if (!isGroupOwner.value) { alert('只有群主可以修改群公告'); return }
+  conv.announcement = announcementDraft.value.trim(); try { await editGroup({ groupId: conv.relationId ?? conv.id, groupName: conv.groupName || conv.displayName || '', introduction: conv.introduction || '', announcement: conv.announcement }); showAnnouncementModal.value = false } catch (e) { alert(e?.message || '更新失败') } }
+const handleRemoveMemberConfirm = async () => {
+  if (!selectedMembersToRemove.value.length || !selectedConversation.value) return
+  const conv = selectedConversation.value
+  try {
+    await removeGroupMembers(conv.relationId ?? conv.id, selectedMembersToRemove.value)
+    const detail = await fetchGroupDetail(conv.relationId ?? conv.id)
+    if (detail?.members) conv.members = detail.members
+    alert('已移除')
+    showRemoveMemberModal.value = false
+  } catch (e) { alert(e?.message || '移除失败') }
+}
+
+const toggleMemberToRemove = (mid) => {
+  const idx = selectedMembersToRemove.value.indexOf(mid)
+  if (idx > -1) selectedMembersToRemove.value.splice(idx, 1)
+  else selectedMembersToRemove.value.push(mid)
+}
+
+const handleRemoveMember = async (member) => {
+  const conv = selectedConversation.value; if (!conv?.isGroupConversation) return;
+  if (!isGroupOwner.value) { alert('只有群主可以移除成员'); return }
+  const mid = member?.userId ?? member?.id; if (!mid) return; try { await removeGroupMembers(conv.relationId ?? conv.id, [mid]); const detail = await fetchGroupDetail(conv.relationId ?? conv.id); if (detail?.members) conv.members = detail.members; alert('已移除') } catch (e) { alert(e?.message || '移除失败') } }
+const handleDissolveGroup = async () => {
+  const conv = selectedConversation.value; if (!conv?.isGroupConversation) return;
+  if (!isGroupOwner.value) { alert('只有群主可以解散群聊'); return }
+  if (!confirm('确定解散群聊？')) return; try { await dissolveGroup(conv.relationId ?? conv.id); alert('群聊已解散'); showSettingsDrawer.value = false; await loadConversations({ force: true }); if (activeConversationId.value === conv.id) activeConversationId.value = conversations.value[0]?.id ?? null } catch (e) { alert(e?.message || '解散失败') } }
 const handleLeaveGroup = async () => { const conv = selectedConversation.value; if (!conv) return; await deleteConvById(conv.id); showSettingsDrawer.value = false }
 
 const ctxMenu = reactive({ visible: false, x: 0, y: 0, target: null })
@@ -1017,7 +1115,31 @@ const msgCtxMenu = reactive({ visible: false, x: 0, y: 0, msg: null })
 const openMsgCtxMenu = (e, msg) => { msgCtxMenu.visible = true; msgCtxMenu.x = e.clientX; msgCtxMenu.y = e.clientY; msgCtxMenu.msg = msg }
 const closeMsgCtxMenu = () => { msgCtxMenu.visible = false; msgCtxMenu.msg = null }
 const handleCollectMessage = async () => { const msg = msgCtxMenu.msg; if (!msg || !selectedConversation.value) { closeMsgCtxMenu(); return }; const mId = msg.dbId || msg.id; if (!mId || String(mId).startsWith('temp_') || String(mId).startsWith('msg_')) { alert('消息ID无效'); closeMsgCtxMenu(); return }; try { await collectFromMessage({ conversationId: selectedConversation.value.id, messageId: mId }); alert('已收藏') } catch (e) { alert(e?.message || '收藏失败') }; closeMsgCtxMenu() }
-const handleAddMsgEmoji = async () => { const msg = msgCtxMenu.msg; if (!msg?.messageFile) { closeMsgCtxMenu(); return }; try { const fi = msg.messageFile; if (fi?.sourceType === 'EMOJI_ITEM_STATIC' || fi?.sourceType === 'EMOJI_ITEM_GIF') { await collectEmojiItem(fi.sourceId) } else { await addEmojiFromMessageFile({ file: { sourceType: fi?.sourceType, sourceId: fi?.sourceId, fileType: fi?.fileType, fileName: fi?.fileName, fileSize: fi?.fileSize, filePath: fi?.filePath, fileDesc: fi?.fileDesc } }) }; alert('已添加到表情') } catch (e) { alert(e?.message || '添加失败') }; closeMsgCtxMenu() }
+const handleAddMsgEmoji = async () => {
+  const msg = msgCtxMenu.msg
+  if (!msg?.messageFile) {
+    closeMsgCtxMenu()
+    return
+  }
+  try {
+    const fi = msg.messageFile
+    await addEmojiFromMessageFile({
+      file: {
+        sourceType: fi.sourceType,
+        sourceId: fi.sourceId,
+        fileType: fi.fileType,
+        fileName: fi.fileName,
+        fileSize: fi.fileSize,
+        filePath: fi.filePath,
+        fileDesc: fi.fileDesc
+      }
+    })
+    alert('已添加到表情')
+  } catch (e) {
+    alert(e?.message || '添加失败')
+  }
+  closeMsgCtxMenu()
+}
 
 const loadDynamicList = async () => { try { const data = await fetchSocialFeedList({ page: 1, size: 50 }); const list = Array.isArray(data?.feedList) ? data.feedList : Array.isArray(data) ? data : []; dynamicList.value = list.map((f) => ({ ...f, _showComments: false, _commentDraft: '', isMine: String(f.userId) === String(currentUser.id) })) } catch (e) { console.error('加载动态失败', e) } }
 const handleToggleLike = async (feed) => { try { if (feed.isLiked) { await unlikeSocialFeed(feed.id); feed.isLiked = false; feed.likeCount = Math.max(0, (feed.likeCount || 1) - 1) } else { await likeSocialFeed(feed.id); feed.isLiked = true; feed.likeCount = (feed.likeCount || 0) + 1 } } catch (e) { alert(e?.message || '操作失败') } }

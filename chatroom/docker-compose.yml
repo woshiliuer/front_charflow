@@ -6,7 +6,7 @@ services:
       dockerfile: Dockerfile
     restart: unless-stopped
     ports:
-      - "${CHATROOM_PORT:-8081}:8080"
+      - "${CHATROOM_PORT:-8081}:8081"
     environment:
       TZ: ${TZ:-Asia/Shanghai}
     networks:
