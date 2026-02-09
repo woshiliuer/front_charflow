@@ -8,7 +8,7 @@
       <div class="nav-items">
         <button v-for="item in navItems" :key="item.id" class="nav-btn" :class="{ active: activeNav === item.id }" :title="item.label" @click="switchNav(item.id)">
           <component :is="item.icon" />
-          <span v-if="item.id === 'contacts' && friendRequests.pendingCount" class="nav-badge">{{ friendRequests.pendingCount }}</span>
+          <span v-if="item.id === 'contacts' && friendRequests.toAgreeCount" class="nav-badge">{{ friendRequests.toAgreeCount }}</span>
         </button>
       </div>
       <button class="nav-btn logout" title="退出登录" @click="handleLogout"><IconLogout /></button>
@@ -55,11 +55,43 @@
 
       <!-- Contacts -->
       <div v-else-if="activeNav === 'contacts'" class="sidebar-list">
-        <div v-if="friendRequests.incoming.filter(r => r.requestStatus === 0).length" class="section-label">好友请求</div>
-        <div v-for="req in friendRequests.incoming.filter(r => r.requestStatus === 0)" :key="req.id" class="req-item">
-          <div class="req-info"><strong>{{ req.nickname || '未知' }}</strong><span>{{ req.applyMessage || '请求添加好友' }}</span></div>
-          <div class="req-btns"><button class="btn-xs accent" @click="handleApproveReq(req)">同意</button><button class="btn-xs" @click="handleRejectReq(req)">拒绝</button></div>
+        <div v-if="friendRequests.incoming.length || friendRequests.outgoing.length" class="req-section">
+          <button type="button" class="req-section-header" @click="showReqHistory = !showReqHistory">
+            <span class="req-section-title">申请记录</span>
+            <span v-if="friendRequests.toAgreeCount" class="req-section-badge">待处理 {{ friendRequests.toAgreeCount }}</span>
+            <span class="req-section-chev" :class="{ open: showReqHistory }">›</span>
+          </button>
+          <div v-show="showReqHistory" class="req-history-list">
+            <div v-for="req in sortedFriendRequests" :key="req.id" class="req-item history" :class="{ pending: Number(req.requestStatus) === 0 }">
+              <div class="req-avatar">
+                <img v-if="req.avatar" :src="req.avatar" />
+                <span v-else class="avatar-letter">{{ (req.nickname || '?')[0].toUpperCase() }}</span>
+              </div>
+
+              <div class="req-content">
+                <div class="req-title-row">
+                  <div class="req-name">{{ req.nickname || '未知' }}</div>
+                </div>
+                <div class="req-msg">{{ req.applyMessage || '请求添加好友' }}</div>
+              </div>
+
+              <div class="req-right">
+                <div class="req-time">{{ formatFeedTime(req.createTime) }}</div>
+                <template v-if="Number(req.requestStatus) === 0 && req.applyDirection === 2">
+                  <div class="req-actions">
+                    <button class="btn-mini primary" @click.stop="handleApproveReq(req)">同意</button>
+                    <button class="btn-mini" @click.stop="handleRejectReq(req)">拒绝</button>
+                  </div>
+                </template>
+                <template v-else>
+                  <span v-if="Number(req.requestStatus) === 1" class="chip chip-status approved">已同意</span>
+                  <span v-else-if="Number(req.requestStatus) === 2" class="chip chip-status rejected">已拒绝</span>
+                </template>
+              </div>
+            </div>
+          </div>
         </div>
+
         <div class="section-label">好友 ({{ filteredContacts.length }})</div>
         <div v-for="f in filteredContacts" :key="f.id" class="list-item" @click="handleFriendClick(f)">
           <div class="item-avatar sm"><img :src="f.avatar || DEFAULT_AVATAR" /><span class="dot" :class="f.status"></span></div>
@@ -688,7 +720,12 @@ const activeConversationId = ref(null)
 const messagesByConversation = ref({})
 const contacts = ref([])
 const groups = ref([])
-const friendRequests = reactive({ incoming: [], outgoing: [], pendingCount: 0 })
+const friendRequests = reactive({ incoming: [], outgoing: [], pendingCount: 0, toAgreeCount: 0 })
+const showReqHistory = ref(true)
+const sortedFriendRequests = computed(() => {
+  const all = [...friendRequests.incoming, ...friendRequests.outgoing]
+  return all.sort((a, b) => (b.createTime || 0) - (a.createTime || 0))
+})
 const dynamicList = ref([])
 const favoriteList = ref([])
 const emojiPacks = ref([])
@@ -877,7 +914,47 @@ const { isConnected, connect, disconnect } = useChatWebSocket({ currentUserId: c
 
 const loadFriends = async () => { try { contacts.value = await fetchNormalizedFriends() } catch (e) {} }
 const loadGroups = async () => { try { groups.value = await fetchNormalizedGroups() } catch (e) {} }
-const loadFriendReqs = async () => { try { const data = await fetchFriendRequests(); const list = Array.isArray(data) ? data : Array.isArray(data?.friendRequestList) ? data.friendRequestList : []; const pc = typeof data?.pendingCount === 'number' ? data.pendingCount : list.filter((i) => Number(i?.requestStatus) === 0 && Number(i?.applyDirection) !== 1).length; const inc = []; const out = []; list.forEach((item, i) => { if (!item) return; const dir = Number(item.applyDirection); const rec = { id: item.id ?? `${dir}-${item.userId}-${i}`, userId: item.userId, nickname: item.nickname ?? '', applyMessage: item.applyMessage ?? '', avatar: item.avatarFullUrl ?? '', requestStatus: Number(item.requestStatus) ?? 0 }; if (dir === 1) out.push(rec); else inc.push(rec) }); friendRequests.incoming = inc; friendRequests.outgoing = out; friendRequests.pendingCount = pc } catch (e) {} }
+const loadFriendReqs = async () => {
+  try {
+    const data = await fetchFriendRequests()
+    const list = Array.isArray(data)
+      ? data
+      : Array.isArray(data?.friendRequestList)
+        ? data.friendRequestList
+        : []
+
+    const pc = typeof data?.pendingCount === 'number'
+      ? data.pendingCount
+      : list.filter((i) => Number(i?.requestStatus) === 0 && Number(i?.applyDirection) !== 1).length
+
+    const tac = typeof data?.toAgreeCount === 'number'
+      ? data.toAgreeCount
+      : list.filter((i) => Number(i?.requestStatus) === 0 && Number(i?.applyDirection) === 2).length
+
+    const inc = []
+    const out = []
+    list.forEach((item, i) => {
+      if (!item) return
+      const dir = Number(item.applyDirection)
+      const rec = {
+        id: item.id ?? `${dir}-${item.userId}-${i}`,
+        userId: item.userId,
+        nickname: item.nickname ?? '',
+        applyMessage: item.applyMessage ?? '',
+        avatar: item.avatarFullUrl ?? '',
+        requestStatus: Number(item.requestStatus) ?? 0,
+        applyDirection: dir,
+        createTime: item.createTime
+      }
+      if (dir === 1) out.push(rec)
+      else inc.push(rec)
+    })
+    friendRequests.incoming = inc
+    friendRequests.outgoing = out
+    friendRequests.pendingCount = pc
+    friendRequests.toAgreeCount = tac
+  } catch (e) {}
+}
 const handleApproveReq = async (req) => { let fid = req.userId; const n = Number(fid); if (!Number.isNaN(n)) fid = n; try { await agreeFriendRequest({ friendId: fid, remark: req.nickname ?? '' }); alert('已同意'); loadFriendReqs(); loadFriends() } catch (e) { alert(e?.message || '操作失败') } }
 const handleRejectReq = async (req) => { let fid = req.userId; const n = Number(fid); if (!Number.isNaN(n)) fid = n; try { await rejectFriendRequest(fid); alert('已拒绝'); loadFriendReqs() } catch (e) { alert(e?.message || '操作失败') } }
 const handleFriendClick = async (f) => {
