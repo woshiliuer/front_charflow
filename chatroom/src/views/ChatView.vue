@@ -337,10 +337,10 @@
               </div>
             </div>
 
-            <div class="modal-actions" style="margin-top:12px">
-              <button class="btn-ghost" @click="searchUserResult = null">取消选择</button>
+            <div v-if="searchUserResult.id !== currentUser.id" class="modal-actions apply-actions" style="margin-top:12px">
               <button class="btn-primary" :disabled="addingFriend" @click="handleAddFriendSubmit">{{ addingFriend ? '发送中…' : '发送申请' }}</button>
             </div>
+            <div v-else class="search-error-hint" style="margin-top:12px;color:var(--c-text-3)">无法对自己发送申请</div>
           </div>
           <div v-else-if="searchError" class="search-error-hint">{{ searchError }}</div>
         </div>
@@ -989,6 +989,16 @@ const handleSearchUser = async () => {
 }
 
 const handleSelectSearchResult = (user) => {
+  if (user?.id === currentUser.id) {
+    searchError.value = '无法对自己发送申请'
+    return
+  }
+  if (searchUserResult.value?.id === user?.id) {
+    searchUserResult.value = null
+    addFriendMsg.value = ''
+    addFriendRemark.value = ''
+    return
+  }
   searchUserResult.value = user
   addFriendMsg.value = `你好，我是${currentUser.nickname}`
   addFriendRemark.value = user.nickname || ''

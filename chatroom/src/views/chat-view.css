@@ -281,6 +281,7 @@
 .search-result-item .arrow { color: var(--c-text-4); font-size: 18px; }
 .apply-area { margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--c-border-light); animation: slideDown 0.2s ease-out; }
 .apply-form { display: flex; flex-direction: column; gap: 12px; }
+.apply-actions { justify-content: center; }
 .user-info-brief { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; padding: 10px; background: var(--c-bg-soft); border-radius: var(--c-radius-sm); }
 
 @keyframes slideDown {

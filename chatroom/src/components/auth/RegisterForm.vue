@@ -35,7 +35,7 @@
           <span class="field-label">设置密码</span>
           <div class="input-wrapper">
             <span class="input-icon">🔒</span>
-            <input type="password" v-model="form.password" placeholder="请输入密码" autocomplete="new-password" required />
+            <input type="password" v-model="form.password" placeholder="请输入密码" autocomplete="off" required />
           </div>
         </label>
         
@@ -43,7 +43,7 @@
           <span class="field-label">确认密码</span>
           <div class="input-wrapper">
             <span class="input-icon">🛡️</span>
-            <input type="password" v-model="form.confirmPassword" placeholder="请再次输入密码" autocomplete="new-password" required />
+            <input type="password" v-model="form.confirmPassword" placeholder="请再次输入密码" autocomplete="off" required />
           </div>
         </label>
       </div>
