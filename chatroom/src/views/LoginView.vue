@@ -5,13 +5,23 @@
         <div class="brand-logo">
           <img src="/logo.svg" alt="ChatRoom Logo" />
         </div>
-        <h1 class="brand">ChatRoom</h1>
-        <p class="subtitle">{{ isRegister ? '创建你的账户' : '欢迎回来' }}</p>
+        <h1 class="brand">ChatFlow</h1>
+        <p class="subtitle">{{ isRegister ? '创建您的账户' : '欢迎回来，请登录您的账户' }}</p>
       </header>
 
       <nav class="tabs">
-        <button type="button" class="tab-btn" :class="{ active: !isRegister }" @click="selectTab('login')">登录</button>
-        <button type="button" class="tab-btn" :class="{ active: isRegister }" @click="selectTab('register')">注册</button>
+        <button 
+          type="button" 
+          class="tab-btn" 
+          :class="{ active: !isRegister }" 
+          @click="selectTab('login')"
+        >登录</button>
+        <button 
+          type="button" 
+          class="tab-btn" 
+          :class="{ active: isRegister }" 
+          @click="selectTab('register')"
+        >注册</button>
       </nav>
 
       <div class="auth-container">
@@ -19,10 +29,14 @@
         <RegisterForm v-if="isRegister" @success="handleRegisterSuccess" />
       </div>
 
-      <p class="toggle-hint">
-        <span>{{ isRegister ? '已有账户？' : '没有账户？' }}</span>
-        <button type="button" class="link-btn" @click="toggleTab">{{ isRegister ? '立即登录' : '立即注册' }}</button>
-      </p>
+      <footer class="card-footer">
+        <p class="toggle-hint">
+          <span>{{ isRegister ? '已有账户？' : '没有账户？' }}</span>
+          <button type="button" class="link-btn" @click="toggleTab">
+            {{ isRegister ? '立即登录' : '立即注册' }}
+          </button>
+        </p>
+      </footer>
     </div>
   </div>
 </template>
@@ -48,47 +62,106 @@ const handleLoginSuccess = () => { router.push('/chat') }
   display: flex;
   align-items: center;
   justify-content: center;
-  background: var(--c-bg-soft);
+  background-color: #f8fafc;
   padding: 24px;
 }
+
 .login-card {
-  width: min(420px, 100%);
-  padding: 40px 36px;
-  border-radius: var(--c-radius-lg);
-  background: var(--c-surface);
-  border: 1px solid var(--c-border);
-  box-shadow: var(--c-shadow-lg);
+  width: 100%;
+  max-width: 420px;
+  background-color: #ffffff;
+  padding: 48px 40px;
+  border-radius: 20px;
+  border: 1px solid #e2e8f0;
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03);
   text-align: center;
 }
-.card-header { margin-bottom: 28px; }
-.brand-logo { margin-bottom: 24px; display: flex; justify-content: center; }
-.brand-logo img { width: 120px; height: 120px; filter: drop-shadow(0 8px 24px rgba(66, 99, 235, 0.25)); }
-.auth-container { min-height: 200px; display: flex; flex-direction: column; }
-.brand { font-size: 24px; font-weight: 700; margin: 0; color: var(--c-text); }
-.subtitle { margin: 6px 0 0; color: var(--c-text-3); font-size: 14px; }
+
+.card-header {
+  margin-bottom: 32px;
+}
+
+.brand-logo {
+  margin-bottom: 16px;
+  display: flex;
+  justify-content: center;
+}
+
+.brand-logo img {
+  width: 56px;
+  height: 56px;
+}
+
+.brand {
+  font-size: 26px;
+  font-weight: 800;
+  color: #1e293b;
+  margin: 0;
+  letter-spacing: -0.02em;
+}
+
+.subtitle {
+  font-size: 14px;
+  color: #64748b;
+  margin-top: 8px;
+}
+
 .tabs {
-  display: inline-flex;
-  background: var(--c-bg-mute);
-  border-radius: 999px;
-  padding: 3px;
-  margin-bottom: 24px;
+  display: flex;
+  background-color: #f1f5f9;
+  padding: 4px;
+  border-radius: 10px;
+  margin-bottom: 32px;
 }
+
 .tab-btn {
-  padding: 7px 28px;
-  border: none;
-  border-radius: 999px;
+  flex: 1;
+  padding: 10px;
+  font-size: 14px;
+  font-weight: 600;
+  color: #64748b;
   background: transparent;
-  font-size: 13px;
-  color: var(--c-text-3);
+  border: none;
+  border-radius: 7px;
   cursor: pointer;
-  font-weight: 500;
-  transition: all 0.2s;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
 }
-.tab-btn.active { background: var(--c-surface); color: var(--c-text); box-shadow: var(--c-shadow-sm); font-weight: 600; }
-.toggle-hint { margin-top: 20px; font-size: 13px; color: var(--c-text-3); }
-.link-btn { border: none; background: none; color: var(--c-accent); font-weight: 600; cursor: pointer; margin-left: 4px; padding: 0; font-size: 13px; }
-.link-btn:hover { text-decoration: underline; }
-.fade-enter-active, .fade-leave-active { transition: opacity 0.15s ease, transform 0.15s ease; }
-.fade-enter-from { opacity: 0; transform: translateY(6px); }
-.fade-leave-to { opacity: 0; transform: translateY(-6px); }
+
+.tab-btn.active {
+  background-color: #ffffff;
+  color: #6366f1;
+  box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1);
+}
+
+.auth-container {
+  min-height: 280px;
+  display: flex;
+  flex-direction: column;
+}
+
+.card-footer {
+  margin-top: 32px;
+  padding-top: 24px;
+  border-top: 1px solid #f1f5f9;
+}
+
+.toggle-hint {
+  font-size: 14px;
+  color: #64748b;
+}
+
+.link-btn {
+  background: transparent;
+  border: none;
+  color: #6366f1;
+  font-weight: 700;
+  cursor: pointer;
+  margin-left: 6px;
+  padding: 0;
+  font-size: 14px;
+}
+
+.link-btn:hover {
+  text-decoration: underline;
+}
 </style>

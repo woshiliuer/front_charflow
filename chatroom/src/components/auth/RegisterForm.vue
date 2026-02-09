@@ -1,38 +1,56 @@
 <template>
   <div class="register-form-container">
     <form class="auth-form" @submit.prevent="handleSubmit">
-      <label class="field">
-        <span class="field-label">昵称</span>
-        <input v-model="form.nickname" type="text" placeholder="请输入昵称" autocomplete="nickname" required />
-      </label>
-      
-      <label class="field">
-        <span class="field-label">邮箱地址</span>
-        <input v-model="form.email" type="email" placeholder="请输入邮箱地址" autocomplete="email" required />
-      </label>
-      
-      <label class="field">
-        <span class="field-label">验证码</span>
-        <div class="code-wrap">
-          <input v-model="form.verificationCode" type="text" placeholder="请输入验证码" required />
-          <button type="button" class="code-btn" :disabled="isSendingCode || countdown > 0" @click="handleSendCode">
-            {{ countdownText }}
-          </button>
-        </div>
-      </label>
-      
-      <label class="field">
-        <span class="field-label">密码</span>
-        <input type="password" v-model="form.password" placeholder="请输入密码" autocomplete="new-password" required />
-      </label>
-      
-      <label class="field">
-        <span class="field-label">确认密码</span>
-        <input type="password" v-model="form.confirmPassword" placeholder="请再次输入密码" autocomplete="new-password" required />
-      </label>
+      <div class="input-group">
+        <label class="field">
+          <span class="field-label">昵称</span>
+          <div class="input-wrapper">
+            <span class="input-icon">👤</span>
+            <input v-model="form.nickname" type="text" placeholder="请输入昵称" autocomplete="nickname" required />
+          </div>
+        </label>
+        
+        <label class="field">
+          <span class="field-label">邮箱地址</span>
+          <div class="input-wrapper">
+            <span class="input-icon">✉️</span>
+            <input v-model="form.email" type="email" placeholder="请输入邮箱地址" autocomplete="email" required />
+          </div>
+        </label>
+        
+        <label class="field">
+          <span class="field-label">验证码</span>
+          <div class="code-wrap">
+            <div class="input-wrapper">
+              <span class="input-icon">🔑</span>
+              <input v-model="form.verificationCode" type="text" placeholder="请输入验证码" required />
+            </div>
+            <button type="button" class="code-btn" :disabled="isSendingCode || countdown > 0" @click="handleSendCode">
+              {{ countdownText }}
+            </button>
+          </div>
+        </label>
+        
+        <label class="field">
+          <span class="field-label">设置密码</span>
+          <div class="input-wrapper">
+            <span class="input-icon">🔒</span>
+            <input type="password" v-model="form.password" placeholder="请输入密码" autocomplete="new-password" required />
+          </div>
+        </label>
+        
+        <label class="field">
+          <span class="field-label">确认密码</span>
+          <div class="input-wrapper">
+            <span class="input-icon">🛡️</span>
+            <input type="password" v-model="form.confirmPassword" placeholder="请再次输入密码" autocomplete="new-password" required />
+          </div>
+        </label>
+      </div>
       
       <button type="submit" class="submit-btn" :disabled="isSubmitting">
-        {{ isSubmitting ? '注册中…' : '注册' }}
+        <span v-if="!isSubmitting">注册</span>
+        <span v-else class="loading-dots">提交中</span>
       </button>
     </form>
   </div>
@@ -148,81 +166,128 @@ const handleSubmit = async () => {
 <style scoped>
 .register-form-container {
   width: 100%;
-  padding: 4px 0;
 }
+
 .auth-form {
-  display: flex;
-  flex-direction: column;
+  display: grid;
   gap: 16px;
   text-align: left;
 }
-.field {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
+
+.input-group {
+  display: grid;
+  gap: 12px;
 }
+
+.field {
+  display: grid;
+  gap: 4px;
+}
+
 .field-label {
   font-size: 13px;
   font-weight: 600;
-  color: var(--c-text-2);
+  color: #4b5563;
 }
-.field input {
+
+.input-wrapper {
+  position: relative;
+  display: flex;
+  align-items: center;
   width: 100%;
-  padding: 10px 14px;
-  border-radius: var(--c-radius-sm);
-  border: 1px solid var(--c-border);
-  background: var(--c-bg);
-  color: var(--c-text);
+}
+
+.input-icon {
+  position: absolute;
+  left: 12px;
+  font-size: 14px;
+  color: #9ca3af;
+  pointer-events: none;
+}
+
+.input-wrapper input {
+  width: 100%;
+  padding: 10px 12px 10px 36px;
+  border-radius: 8px;
+  border: 1px solid #d1d5db;
+  background: #ffffff;
+  color: #111827;
   font-size: 14px;
   outline: none;
-  transition: all 0.2s;
+  transition: border-color 0.2s;
 }
-.field input:focus {
-  border-color: var(--c-accent);
-  box-shadow: 0 0 0 3px var(--c-accent-soft);
+
+.input-wrapper input:focus {
+  border-color: #4f46e5;
+  box-shadow: 0 0 0 2px rgba(79, 70, 229, 0.1);
 }
+
 .code-wrap {
   display: flex;
-  gap: 10px;
+  gap: 8px;
 }
-.code-wrap input {
+
+.code-wrap .input-wrapper {
   flex: 1;
 }
+
 .code-btn {
   flex-shrink: 0;
-  min-width: 100px;
-  padding: 0 14px;
-  border: none;
-  border-radius: var(--c-radius-sm);
-  background: var(--c-accent);
-  color: #fff;
-  font-size: 13px;
+  min-width: 90px;
+  padding: 0 12px;
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  background: #f9fafb;
+  color: #374151;
+  font-size: 12px;
   font-weight: 600;
   cursor: pointer;
+  transition: all 0.2s;
 }
+
+.code-btn:hover:not(:disabled) {
+  background: #f3f4f6;
+  border-color: #9ca3af;
+}
+
 .code-btn:disabled {
   opacity: 0.5;
   cursor: not-allowed;
 }
+
 .submit-btn {
   width: 100%;
   padding: 12px;
-  border-radius: var(--c-radius-sm);
+  border-radius: 8px;
   border: none;
-  background: var(--c-accent);
-  color: #fff;
+  background: #4f46e5;
+  color: #ffffff;
   font-size: 15px;
   font-weight: 600;
   cursor: pointer;
   margin-top: 8px;
   transition: background 0.2s;
 }
+
 .submit-btn:hover:not(:disabled) {
-  background: var(--c-accent-hover);
+  background: #4338ca;
 }
+
 .submit-btn:disabled {
   opacity: 0.6;
   cursor: not-allowed;
+}
+
+.loading-dots:after {
+  content: '...';
+  animation: dots 1.5s infinite;
+}
+
+@keyframes dots {
+  0%, 20% { content: '.'; }
+  40% { content: '..'; }
+  60% { content: '...'; }
+  80%, 100% { content: ''; }
 }
 </style>
 
