@@ -462,7 +462,12 @@
         <div class="modal-card"><h3>发布动态</h3>
           <textarea v-model="feedDraft" rows="3" placeholder="分享你的想法..."></textarea>
           <label class="btn-xs">添加图片<input type="file" accept="image/*" multiple hidden @change="handleFeedFileSelect" /></label>
-          <div v-if="feedFiles.length" class="feed-preview"><span v-for="(f, i) in feedFiles" :key="i">{{ f.name }}</span></div>
+          <div v-if="feedFiles.length" class="feed-preview">
+            <div v-for="(f, i) in feedFiles" :key="i" class="preview-item">
+              <img :src="getPreviewUrl(f)" class="preview-img" />
+              <button class="preview-remove" @click="removeFeedFile(i)">×</button>
+            </div>
+          </div>
           <div class="modal-actions"><button class="btn-ghost" @click="showPublishFeed = false">取消</button><button class="btn-primary" :disabled="publishingFeed" @click="handlePublishFeed">{{ publishingFeed ? '发布中…' : '发布' }}</button></div>
         </div>
       </div>
@@ -1241,12 +1246,31 @@ const handleDetailDeleteComment = async (commentId) => { try { await deleteSocia
 const handleDeleteFeedFromDetail = async () => { if (!activeFeedDetail.value) return; const feedId = activeFeedDetail.value.id; if (!confirm('确定删除此动态？')) return; try { await deleteSocialFeed(feedId); activeFeedId.value = null; activeFeedDetail.value = null; await loadDynamicList() } catch (e) { alert(e?.message || '删除失败') } }
 const openPublishFeed = () => { feedDraft.value = ''; feedFiles.value = []; showPublishFeed.value = true }
 const handleFeedFileSelect = (e) => { feedFiles.value = Array.from(e.target.files || []); e.target.value = '' }
+const getPreviewUrl = (file) => {
+  if (!file) return ''
+  if (file instanceof File) {
+    return URL.createObjectURL(file)
+  }
+  if (file.fullFilePath || file.filePath) {
+    return file.fullFilePath || file.filePath
+  }
+  return ''
+}
+const removeFeedFile = (index) => {
+  feedFiles.value = feedFiles.value.filter((_, i) => i !== index)
+}
 const handlePublishFeed = async () => { if (!feedDraft.value.trim()) { alert('请输入内容'); return }; publishingFeed.value = true; try { let files = []; if (feedFiles.value.length) { files = await uploadSocialFeedFiles(feedFiles.value) }; await publishSocialFeed({ content: feedDraft.value.trim(), files: Array.isArray(files) ? files : [] }); alert('发布成功'); showPublishFeed.value = false; await loadDynamicList() } catch (e) { alert(e?.message || '发布失败') } finally { publishingFeed.value = false } }
 
 const loadFavorites = async () => { try { const { data } = await fetchFavoriteList(); favoriteList.value = Array.isArray(data) ? data : [] } catch (e) {} }
-const selectFavorite = (fav) => {
+const selectFavorite = async (fav) => {
   activeFavoriteId.value = fav.id
-  activeFavoriteDetail.value = fav
+  try {
+    const detail = await fetchFavoriteDetail(fav.id)
+    activeFavoriteDetail.value = detail || fav
+  } catch (e) {
+    console.error('Failed to fetch favorite detail:', e)
+    activeFavoriteDetail.value = fav
+  }
 }
 const handleDeleteFavorite = async (id) => {
   try {
