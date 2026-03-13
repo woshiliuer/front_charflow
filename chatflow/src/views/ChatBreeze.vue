@@ -525,6 +525,7 @@ const handleSendEmojiFile = async (payload) => {
       messageFile,
     })
 
+    const messageIndex = messagesByConversation.value[conversationId].findIndex((msg) => msg.id === tempId)
     if (messageIndex !== -1) {
       const msgObj = messagesByConversation.value[conversationId][messageIndex]
       msgObj.status = 1
@@ -1423,6 +1424,7 @@ const handleSendFileMessage = async (file) => {
       messageFile,
     })
 
+    const messageIndex = messagesByConversation.value[conversationId].findIndex((msg) => msg.id === tempId)
     if (messageIndex !== -1) {
       const msgObj = messagesByConversation.value[conversationId][messageIndex]
       msgObj.status = 1
