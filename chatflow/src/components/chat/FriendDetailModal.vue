@@ -418,6 +418,94 @@ const handleDelete = async () => {
   color: #20412f;
   display: flex;
   align-items: center;
+  gap: 8px;
+}
+
+.friend-modal-row dd .edit-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #2f9963;
+  background: rgba(47, 153, 99, 0.12);
+  border: 1px solid rgba(47, 153, 99, 0.35);
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  margin-left: 8px;
+  line-height: 1.4;
+}
+
+.friend-modal-row dd .edit-btn:hover {
+  background: rgba(47, 153, 99, 0.22);
+  border-color: rgba(47, 153, 99, 0.55);
+  transform: translateY(-1px);
+}
+
+.edit-remark-input {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1;
+  min-width: 0;
+}
+
+.edit-remark-input input {
+  flex: 1;
+  min-width: 0;
+  padding: 5px 10px;
+  font-size: 13px;
+  border: 1px solid rgba(47, 153, 99, 0.3);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.8);
+  color: #20412f;
+  outline: none;
+  transition: border-color 0.2s ease;
+}
+
+.edit-remark-input input:focus {
+  border-color: #2f9963;
+}
+
+.save-btn,
+.cancel-btn {
+  padding: 4px 10px;
+  font-size: 11px;
+  font-weight: 600;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  border: none;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.save-btn {
+  background: linear-gradient(135deg, #47b67c, #2f9963);
+  color: #ffffff;
+}
+
+.save-btn:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(47, 153, 99, 0.3);
+}
+
+.save-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.cancel-btn {
+  background: rgba(255, 255, 255, 0.8);
+  color: #5a7a68;
+  border: 1px solid rgba(90, 122, 104, 0.2);
+}
+
+.cancel-btn:hover {
+  background: rgba(255, 255, 255, 1);
+  border-color: rgba(90, 122, 104, 0.4);
 }
 
 .friend-modal-actions {
